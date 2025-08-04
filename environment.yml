@@ -1,0 +1,3 @@
+name: bioreactor
+dependencies:
+- python
