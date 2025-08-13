@@ -141,7 +141,6 @@ def create_simulator(parameters):
         perfusion_rate_base=parameters['perfusion_rate_base'],
         max_growth_rate=parameters['max_growth_rate'],
         death_rate=parameters['death_rate'],
-        glucose_uptake_rate=parameters['glucose_uptake_rate'],
         glutamine_uptake_rate=parameters['glutamine_uptake_rate'],
         specific_productivity=parameters['specific_productivity'],
         lactate_yield_per_glucose=parameters['lactate_yield_per_glucose'],
@@ -152,12 +151,25 @@ def create_simulator(parameters):
         max_viable_density=parameters['max_viable_density'],
         lactate_inhibition_coeff=parameters['lactate_inhibition_coeff'],
         ammonia_inhibition_coeff=parameters['ammonia_inhibition_coeff'],
-        ph_inhibition_coeff=parameters['ph_inhibition_coeff'],
-        temp_inhibition_coeff=parameters['temp_inhibition_coeff'],
+        temp_heat_sensitivity=parameters['temp_heat_sensitivity'],
+        temp_cold_sensitivity=parameters['temp_cold_sensitivity'],
+        temp_death_threshold=parameters['temp_death_threshold'],
+        ph_alkaline_sensitivity=parameters['ph_alkaline_sensitivity'],
+        ph_acidic_sensitivity=parameters['ph_acidic_sensitivity'],
+        ph_death_min=parameters['ph_death_min'],
+        ph_death_max=parameters['ph_death_max'],
+        ph_optimal_min=parameters['ph_optimal_min'],
+        ph_optimal_max=parameters['ph_optimal_max'],
         culture_ph=parameters['culture_ph'],
-        optimal_ph=parameters['optimal_ph'],
         glucose_feed_conc=parameters['glucose_feed_conc'],
-        glutamine_feed_conc=parameters['glutamine_feed_conc']
+        glutamine_feed_conc=parameters['glutamine_feed_conc'],
+        measurement_noise=parameters['measurement_noise'],
+        glucose_growth_coeff=parameters['glucose_growth_coeff'],
+        glucose_maintenance_rate=parameters['glucose_maintenance_rate'],
+        lactate_shift_glucose=parameters['lactate_shift_glucose'],
+        lactate_switch_steepness=parameters['lactate_switch_steepness'],
+        lactate_consumption_max=parameters['lactate_consumption_max'],
+        lactate_half_saturation=parameters['lactate_half_saturation']
     )
 
 

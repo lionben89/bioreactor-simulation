@@ -18,7 +18,7 @@ from pathlib import Path
 
 # Add parent directory to Python path to import utils
 sys.path.append(str(Path(__file__).parent.parent))
-from utils.helpers import get_parameter_changes, get_y_axis_label, format_variable_name
+from utils.helpers import get_parameter_changes, get_y_axis_label, format_variable_name, apply_measurement_noise
 from utils.helpers import get_parameter_changes, get_y_axis_label, format_variable_name
 
 
@@ -110,13 +110,20 @@ def create_individual_plot(variable_name, segments, current_time_point, original
         line_style = 'dash' if segment['is_fork'] else 'solid'
         segment_name = f"Fork {segment['segment_id']}" if segment['is_fork'] else "Original"
         
-        # Extract time series data
-        time_points = [s['time'] for s in segment['states']]
-        y_data = [s[variable_name] for s in segment['states']]
+        # Apply measurement noise to states for visualization
+        measurement_noise = segment['parameters'].get('measurement_noise', 0.0)
+        noisy_states = apply_measurement_noise(segment['states'], measurement_noise)
+        
+        # Extract time series data from noisy states
+        time_points = [s['time'] for s in noisy_states]
+        y_data = [s[variable_name] for s in noisy_states]
         
         # Generate parameter change information for hover
         param_changes = get_parameter_changes(segment, original_params) if segment['is_fork'] else []
         changes_text = f"<br>Changed: {', '.join(param_changes)}" if param_changes else ""
+        
+        # Add noise indicator to hover if noise is applied
+        noise_text = f"<br>Noise: {measurement_noise*100:.1f}%" if measurement_noise > 0 else ""
         
         # Add trace to figure
         fig.add_trace(
@@ -131,6 +138,7 @@ def create_individual_plot(variable_name, segments, current_time_point, original
                             "Value: %{y:.3f}<br>" +
                             f"Segment: {segment_name}" +
                             changes_text +
+                            noise_text +
                             "<extra></extra>"
             )
         )

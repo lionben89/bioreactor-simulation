@@ -9,11 +9,18 @@ Key Features:
 - Proper parameter handling for fork segments
 - Timestamped file naming
 - Original parameter values before fork points
+- Measurement noise application for realistic export data
 """
 
 import streamlit as st
 import pandas as pd
 from datetime import datetime
+import sys
+from pathlib import Path
+
+# Add parent directory to Python path to import utils
+sys.path.append(str(Path(__file__).parent.parent))
+from utils.helpers import apply_measurement_noise
 
 
 def render_export_button():
@@ -59,10 +66,17 @@ def generate_csv_data():
     for segment in st.session_state.simulation_segments:
         segment_name = f"Fork {segment['segment_id']}" if segment['is_fork'] else "Original"
         
+        # Apply measurement noise to segment states for export
+        measurement_noise = segment['parameters'].get('measurement_noise', 0.0)
+        noisy_states = apply_measurement_noise(segment['states'], measurement_noise)
+        
         # For fork segments, include original data up to fork point with ORIGINAL parameters
         if segment['is_fork']:
             original_segment = st.session_state.simulation_segments[0]  # Original is always first
-            for state in original_segment['states']:
+            original_noise = original_segment['parameters'].get('measurement_noise', 0.0)
+            original_noisy_states = apply_measurement_noise(original_segment['states'], original_noise)
+            
+            for state in original_noisy_states:
                 if state['time'] <= segment['start_time']:
                     row = {
                         'segment_id': segment['segment_id'],
@@ -71,14 +85,14 @@ def generate_csv_data():
                         'time': state['time'],
                         'fork_original_data': True  # Flag for pre-fork original data
                     }
-                    # Add state variables from original timeline
+                    # Add state variables from original timeline (with noise)
                     row.update(state)
                     # Add ORIGINAL parameters (before fork changes)
                     row.update(original_params)
                     csv_data.append(row)
         
         # Add the segment's own data with correct parameters
-        for state in segment['states']:
+        for state in noisy_states:
             row = {
                 'segment_id': segment['segment_id'],
                 'segment_name': segment_name,
@@ -86,7 +100,7 @@ def generate_csv_data():
                 'time': state['time'],
                 'fork_original_data': False  # This is actual fork/original data
             }
-            # Add state variables
+            # Add state variables (with noise applied)
             row.update(state)
             # Add appropriate parameters (original for original, modified for forks)
             row.update(segment['parameters'])

@@ -142,71 +142,125 @@ def render_growth_parameters():
     intrinsic behavior of the CHO cell culture.
     
     Returns:
-        dict: Dictionary containing growth parameters:
-              - max_growth_rate: Maximum specific growth rate (1/h)
-              - death_rate: Cell death rate constant (1/h)
-              - max_viable_density: Maximum sustainable cell density (million cells/mL)
-              - specific_productivity: Product formation rate per cell (g/cell/h)
-              - glucose_uptake_rate: Glucose consumption rate per cell (g/cell/h)
-              - glutamine_uptake_rate: Glutamine consumption rate per cell (g/cell/h)
+        dict: Dictionary containing growth parameters including mechanistic kinetics
     """
     st.sidebar.subheader("Cell Growth Parameters")
     
-    with st.sidebar.expander("Growth Kinetics", expanded=False):
+    with st.sidebar.expander("Growth & Death Kinetics", expanded=False):
         # Cell growth and death kinetics
         max_growth_rate = st.number_input(
-            "Max Growth Rate (mu_max)", 
+            "Max Growth Rate (μ_max)", 
             value=0.04, 
             min_value=0.0,
             help="Maximum specific growth rate under optimal conditions (1/h)",
             key="max_growth_rate"
         )
         death_rate = st.number_input(
-            "Death Rate (kd)", 
+            "Death Rate (k_d)", 
             value=0.005, 
             min_value=0.0,
             help="Cell death rate constant (1/h)",
             key="death_rate"
         )
         max_viable_density = st.number_input(
-            "Max Viable Density (million cells/mL)", 
+            "Max Viable Density (X_max)", 
             value=20.0, 
             min_value=0.0,
             help="Maximum sustainable viable cell density (million cells/mL)",
             key="max_viable_density"
         )
     
-    with st.sidebar.expander("Metabolic Rates", expanded=False):
-        # Cellular metabolic activity rates
+    with st.sidebar.expander("Product Formation", expanded=False):
+        # Product formation
         specific_productivity = st.number_input(
-            "Specific Productivity (qP)", 
+            "Specific Productivity (q_P)", 
             value=0.001, 
             min_value=0.0,
             help="Product formation rate per viable cell (g/cell/h)",
             key="specific_productivity"
         )
-        glucose_uptake_rate = st.number_input(
-            "Glucose Uptake Rate (qG)", 
-            value=0.03, 
+    
+    # NEW: Mechanistic Glucose Kinetics - Primary section
+    with st.sidebar.expander("🔬 Mechanistic Glucose Kinetics", expanded=True):
+        st.markdown("**Condition-Dependent Glucose Consumption (Pirt Model)**")
+        st.info("q_G = glucose_growth_coeff × μ + glucose_maintenance_rate")
+        
+        glucose_growth_coeff = st.number_input(
+            "Growth-Associated Glucose (Y_G/X⁻¹)", 
+            value=0.5, 
             min_value=0.0,
-            help="Glucose consumption rate per viable cell (g/cell/h)",
-            key="glucose_uptake_rate"
+            help="Glucose needed per unit growth - scales with growth rate (g glucose/g cells)",
+            key="glucose_growth_coeff"
         )
-        glutamine_uptake_rate = st.number_input(
-            "Glutamine Uptake Rate (qQ)", 
+        glucose_maintenance_rate = st.number_input(
+            "Maintenance Glucose (m_G)", 
             value=0.01, 
             min_value=0.0,
-            help="Glutamine consumption rate per viable cell (g/cell/h)",
+            help="Baseline glucose consumption for cell maintenance (g glucose per cell per hour)",
+            key="glucose_maintenance_rate"
+        )
+        
+        st.markdown("💡 **Benefit**: Glucose consumption automatically responds to culture conditions!")
+    
+    # NEW: Mechanistic Lactate Switching - Primary section  
+    with st.sidebar.expander("🔄 Mechanistic Lactate Switching", expanded=True):
+        st.markdown("**Metabolic Switching: Production ↔ Consumption**")
+        st.info("High glucose → Lactate production | Low glucose → Lactate consumption")
+        
+        lactate_shift_glucose = st.number_input(
+            "Glucose Shift Threshold (G_shift)", 
+            value=2.5, 
+            min_value=0.0,
+            help="Glucose level where metabolism shifts between production and consumption (g/L)",
+            key="lactate_shift_glucose"
+        )
+        lactate_switch_steepness = st.number_input(
+            "Switch Steepness (k)", 
+            value=2.0, 
+            min_value=0.1,
+            help="Sharpness of metabolic transition (higher = more abrupt switch)",
+            key="lactate_switch_steepness"
+        )
+        lactate_consumption_max = st.number_input(
+            "Max Lactate Consumption (q_L,max)", 
+            value=0.02, 
+            min_value=0.0,
+            help="Maximum lactate consumption rate per cell (g lactate per cell per hour)",
+            key="lactate_consumption_max"
+        )
+        lactate_half_saturation = st.number_input(
+            "Lactate Half-Saturation (K_L)", 
+            value=0.5, 
+            min_value=0.0,
+            help="Half-saturation constant for lactate consumption kinetics (g/L)",
+            key="lactate_half_saturation"
+        )
+        
+        st.markdown("💡 **Benefit**: Realistic CHO cell lactate metabolism with glycolytic shift!")
+    
+    # Simple glutamine kinetics (constant rate model)
+    with st.sidebar.expander("Simple Glutamine Kinetics", expanded=False):
+        glutamine_uptake_rate = st.number_input(
+            "Glutamine Uptake Rate (q_Q)", 
+            value=0.01, 
+            min_value=0.0,
+            help="Glutamine consumption rate per viable cell (g/cell/h) - simple constant rate",
             key="glutamine_uptake_rate"
         )
+        st.markdown("ℹ️ *Uses simple constant rate - could be upgraded to mechanistic model*")
     
     return {
         "max_growth_rate": max_growth_rate,
         "death_rate": death_rate,
         "max_viable_density": max_viable_density,
         "specific_productivity": specific_productivity,
-        "glucose_uptake_rate": glucose_uptake_rate,
-        "glutamine_uptake_rate": glutamine_uptake_rate
+        "glutamine_uptake_rate": glutamine_uptake_rate,
+        "glucose_growth_coeff": glucose_growth_coeff,
+        "glucose_maintenance_rate": glucose_maintenance_rate,
+        "lactate_shift_glucose": lactate_shift_glucose,
+        "lactate_switch_steepness": lactate_switch_steepness,
+        "lactate_consumption_max": lactate_consumption_max,
+        "lactate_half_saturation": lactate_half_saturation
     }
 
 # ==================== MEDIA PARAMETERS ====================
@@ -220,47 +274,49 @@ def render_media_parameters():
     These parameters control the efficiency of nutrient conversion.
     
     Returns:
-        dict: Dictionary containing media parameters:
-              - glucose_monod_const: Half-saturation constant for glucose (g/L)
-              - glutamine_monod_const: Half-saturation constant for glutamine (g/L)
-              - lactate_yield_per_glucose: Lactate produced per glucose consumed (g/g)
-              - ammonia_yield_per_glutamine: Ammonia produced per glutamine consumed (g/g)
+        dict: Dictionary containing media parameters for Monod kinetics and yields
     """
-    st.sidebar.subheader("Media Parameters")
+    st.sidebar.subheader("Media & Substrate Parameters")
     
-    with st.sidebar.expander("Monod Constants", expanded=False):
+    with st.sidebar.expander("Substrate Saturation (Monod Kinetics)", expanded=False):
         # Substrate saturation kinetics (Monod model parameters)
+        st.markdown("**Half-saturation constants for substrate limitation**")
+        
         glucose_monod_const = st.number_input(
-            "Glucose Monod Constant (KG)", 
+            "Glucose Monod Constant (K_G)", 
             value=0.5, 
             min_value=0.0,
-            help="Half-saturation constant for glucose uptake (g/L)",
+            help="Half-saturation constant for glucose utilization in growth (g/L)",
             key="glucose_monod_const"
         )
         glutamine_monod_const = st.number_input(
-            "Glutamine Monod Constant (KQ)", 
+            "Glutamine Monod Constant (K_Q)", 
             value=0.3, 
             min_value=0.0,
-            help="Half-saturation constant for glutamine uptake (g/L)",
+            help="Half-saturation constant for glutamine utilization in growth (g/L)",
             key="glutamine_monod_const"
         )
     
-    with st.sidebar.expander("Metabolic Yields", expanded=False):
+    with st.sidebar.expander("Stoichiometric Yields", expanded=False):
         # Stoichiometric coefficients for metabolite production
+        st.markdown("**Simple stoichiometric yields**")
+        
         lactate_yield_per_glucose = st.number_input(
-            "Lactate Yield per Glucose (YL_G)", 
+            "Lactate Yield per Glucose (Y_L/G)", 
             value=0.9, 
             min_value=0.0,
-            help="Mass of lactate produced per mass of glucose consumed (g/g)",
+            help="Mass of lactate produced per glucose in production phase - used in mechanistic model (g/g)",
             key="lactate_yield_per_glucose"
         )
         ammonia_yield_per_glutamine = st.number_input(
-            "Ammonia Yield per Glutamine (YA_Q)", 
+            "Ammonia Yield per Glutamine (Y_A/Q)", 
             value=1.2, 
             min_value=0.0,
             help="Mass of ammonia produced per mass of glutamine consumed (g/g)",
             key="ammonia_yield_per_glutamine"
         )
+        
+        st.markdown("ℹ️ *Lactate now uses mechanistic switching model, ammonia still uses simple yield*")
     
     return {
         "glucose_monod_const": glucose_monod_const,
@@ -276,107 +332,182 @@ def render_environment_parameters():
     Render environmental parameter inputs for culture conditions and inhibition effects.
     
     This section contains parameters that define the culture environment and
-    how adverse conditions (metabolite accumulation, suboptimal pH/temperature)
-    affect cell growth and viability.
+    how adverse conditions affect cell growth and viability using realistic
+    asymmetric response models.
     
     Returns:
-        dict: Dictionary containing environmental parameters:
-              - dissolved_oxygen_percent: Oxygen saturation level (%)
-              - oxygen_monod_const: Half-saturation constant for oxygen
-              - lactate_inhibition_coeff: Growth inhibition coefficient for lactate
-              - ammonia_inhibition_coeff: Growth inhibition coefficient for ammonia
-              - ph_inhibition_coeff: Growth inhibition coefficient for pH deviation
-              - temp_inhibition_coeff: Growth inhibition coefficient for temperature deviation
-              - culture_ph: Current culture pH
-              - optimal_ph: Optimal pH for growth
-              - culture_temp: Current culture temperature (°C)
-              - optimal_temp: Optimal temperature for growth (°C)
+        dict: Dictionary containing environmental parameters with asymmetric models
     """
     st.sidebar.subheader("Environmental Parameters")
     
-    with st.sidebar.expander("Oxygen & Inhibition", expanded=False):
+    with st.sidebar.expander("Oxygen & Metabolite Inhibition", expanded=False):
         # Oxygen availability and metabolite inhibition
         dissolved_oxygen_percent = st.number_input(
             "Dissolved Oxygen (%)", 
             value=100, 
             min_value=0,
-            help="Dissolved oxygen saturation level (%)",
+            help="Dissolved oxygen saturation level (%) - affects growth rate",
             key="dissolved_oxygen_percent"
         )
         oxygen_monod_const = st.number_input(
-            "Oxygen Monod Constant (KDO)", 
+            "Oxygen Monod Constant (K_DO)", 
             value=5.0, 
             min_value=0.0,
-            help="Half-saturation constant for oxygen utilization",
+            help="Half-saturation constant for oxygen utilization in growth",
             key="oxygen_monod_const"
         )
+        
+        st.markdown("**Waste Product Inhibition**")
         lactate_inhibition_coeff = st.number_input(
-            "Lactate Inhibition Coeff", 
+            "Lactate Inhibition Coefficient (α_L)", 
             value=0.02, 
             min_value=0.0,
             help="Growth inhibition coefficient for lactate accumulation",
             key="lactate_inhibition_coeff"
         )
         ammonia_inhibition_coeff = st.number_input(
-            "Ammonia Inhibition Coeff", 
+            "Ammonia Inhibition Coefficient (α_A)", 
             value=0.03, 
             min_value=0.0,
             help="Growth inhibition coefficient for ammonia accumulation",
             key="ammonia_inhibition_coeff"
         )
     
-    with st.sidebar.expander("Culture Conditions", expanded=False):
-        # pH and temperature conditions
-        ph_inhibition_coeff = st.number_input(
-            "pH Inhibition Coeff", 
-            value=0.05, 
-            min_value=0.0,
-            help="Growth inhibition coefficient for pH deviation from optimum",
-            key="ph_inhibition_coeff"
-        )
-        temp_inhibition_coeff = st.number_input(
-            "Temp Inhibition Coeff", 
-            value=0.04, 
-            min_value=0.0,
-            help="Growth inhibition coefficient for temperature deviation from optimum",
-            key="temp_inhibition_coeff"
-        )
-        culture_ph = st.number_input(
-            "Culture pH", 
-            value=6.5,
-            help="Current pH of the culture medium",
-            key="culture_ph"
-        )
-        optimal_ph = st.number_input(
-            "Optimal pH", 
-            value=7.2,
-            help="Optimal pH for maximum cell growth",
-            key="optimal_ph"
-        )
-        culture_temp = st.number_input(
-            "Culture Temp (°C)", 
-            value=22,
-            help="Current temperature of the culture (°C)",
-            key="culture_temp"
-        )
+    with st.sidebar.expander("🌡️ Asymmetric Temperature Effects", expanded=False):
+        # Temperature parameters with asymmetric sensitivity
+        st.markdown("**Biologically Realistic Temperature Response**")
+        st.info("Heat is more damaging than cold - matches real CHO cell behavior")
+        
         optimal_temp = st.number_input(
-            "Optimal Temp (°C)", 
+            "Optimal Temperature (°C)", 
             value=37,
             help="Optimal temperature for maximum cell growth (°C)",
             key="optimal_temp"
         )
+        temp_death_threshold = st.number_input(
+            "Heat Death Threshold (°C)", 
+            value=42.0, 
+            min_value=0.0,
+            help="Temperature above which complete growth arrest occurs (°C)",
+            key="temp_death_threshold"
+        )
+        temp_heat_sensitivity = st.number_input(
+            "Heat Stress Sensitivity (α_T,hot)", 
+            value=0.8, 
+            min_value=0.0,
+            help="Sensitivity coefficient for heat stress (higher = more sensitive to heat)",
+            key="temp_heat_sensitivity"
+        )
+        temp_cold_sensitivity = st.number_input(
+            "Cold Stress Sensitivity (α_T,cold)", 
+            value=0.3, 
+            min_value=0.0,
+            help="Sensitivity coefficient for cold stress (lower = less sensitive to cold)",
+            key="temp_cold_sensitivity"
+        )
+    
+    with st.sidebar.expander("🧪 Asymmetric pH Effects", expanded=False):
+        # pH parameters with asymmetric sensitivity
+        st.markdown("**Biologically Realistic pH Response**")
+        st.info("Alkaline conditions are more damaging than acidic - matches real cell physiology")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            ph_death_min = st.number_input(
+                "pH Death Minimum", 
+                value=6.5,
+                help="Minimum pH for cell survival",
+                key="ph_death_min"
+            )
+            ph_optimal_min = st.number_input(
+                "pH Optimal Minimum", 
+                value=7.0,
+                help="Lower bound of optimal pH range",
+                key="ph_optimal_min"
+            )
+        with col2:
+            ph_death_max = st.number_input(
+                "pH Death Maximum", 
+                value=8.0,
+                help="Maximum pH for cell survival",
+                key="ph_death_max"
+            )
+            ph_optimal_max = st.number_input(
+                "pH Optimal Maximum", 
+                value=7.4,
+                help="Upper bound of optimal pH range",
+                key="ph_optimal_max"
+            )
+            
+        ph_acidic_sensitivity = st.number_input(
+            "Acidic Stress Sensitivity (α_pH,acid)", 
+            value=0.3, 
+            min_value=0.0,
+            help="Sensitivity coefficient for acidic stress (lower = less sensitive to low pH)",
+            key="ph_acidic_sensitivity"
+        )
+        ph_alkaline_sensitivity = st.number_input(
+            "Alkaline Stress Sensitivity (α_pH,alk)", 
+            value=0.8, 
+            min_value=0.0,
+            help="Sensitivity coefficient for alkaline stress (higher = more sensitive to high pH)",
+            key="ph_alkaline_sensitivity"
+        )
+    
+    with st.sidebar.expander("Current Culture Conditions", expanded=True):
+        # Current culture conditions
+        st.markdown("**Set Current Operating Conditions**")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            culture_ph = st.number_input(
+                "Culture pH", 
+                value=6.5,
+                help="Current pH of the culture medium",
+                key="culture_ph"
+            )
+        with col2:
+            culture_temp = st.number_input(
+                "Culture Temp (°C)", 
+                value=22,
+                help="Current temperature of the culture (°C)",
+                key="culture_temp"
+            )
+    
+    # ===== MEASUREMENT SYSTEM PARAMETERS =====
+    with st.expander("📊 Measurement System", expanded=False):
+        st.markdown("**Sensor and measurement system parameters**")
+        
+        measurement_noise = st.slider(
+            "Measurement Noise (%)",
+            min_value=0.0,
+            max_value=20.0,
+            value=2.0,
+            step=0.1,
+            help="Percentage noise added to measurements in visualization and export to simulate real sensor variations. "
+                 "0% = perfect measurements, 2% = good lab conditions, 5% = typical conditions, 10%+ = challenging conditions. "
+                 "Note: This only affects display and export - simulation dynamics remain clean.",
+            key="measurement_noise"
+        ) / 100.0  # Convert percentage to decimal
     
     return {
         "dissolved_oxygen_percent": dissolved_oxygen_percent,
         "oxygen_monod_const": oxygen_monod_const,
         "lactate_inhibition_coeff": lactate_inhibition_coeff,
         "ammonia_inhibition_coeff": ammonia_inhibition_coeff,
-        "ph_inhibition_coeff": ph_inhibition_coeff,
-        "temp_inhibition_coeff": temp_inhibition_coeff,
+        "temp_heat_sensitivity": temp_heat_sensitivity,
+        "temp_cold_sensitivity": temp_cold_sensitivity,
+        "temp_death_threshold": temp_death_threshold,
+        "ph_alkaline_sensitivity": ph_alkaline_sensitivity,
+        "ph_acidic_sensitivity": ph_acidic_sensitivity,
+        "ph_death_min": ph_death_min,
+        "ph_death_max": ph_death_max,
+        "ph_optimal_min": ph_optimal_min,
+        "ph_optimal_max": ph_optimal_max,
         "culture_ph": culture_ph,
-        "optimal_ph": optimal_ph,
         "culture_temp": culture_temp,
-        "optimal_temp": optimal_temp
+        "optimal_temp": optimal_temp,
+        "measurement_noise": measurement_noise
     }
 
 # ==================== MAIN PARAMETER INTERFACE ====================

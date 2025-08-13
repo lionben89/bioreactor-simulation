@@ -8,7 +8,55 @@ Key Features:
 - Parameter change detection and formatting
 - Y-axis label generation
 - Data validation utilities
+- Measurement noise application for visualization
 """
+
+import numpy as np
+
+
+def apply_measurement_noise(states, measurement_noise):
+    """
+    Apply measurement noise to a list of simulation states for visualization/export.
+    
+    This function applies Gaussian noise to measurement variables while preserving
+    time and pump_active states. It's used only for display and export purposes,
+    keeping the underlying simulation data clean.
+    
+    Args:
+        states (list): List of state dictionaries from simulation
+        measurement_noise (float): Standard deviation of noise (e.g., 0.02 for 2% noise)
+        
+    Returns:
+        list: List of state dictionaries with noise applied to measurement variables
+    """
+    if measurement_noise <= 0:
+        return states
+    
+    # Initialize random generator
+    rng = np.random.default_rng(42)  # Fixed seed for consistent visualization
+    
+    # Variables that should have measurement noise applied
+    noisy_variables = [
+        'viable_cell_density', 'dead_cell_density', 'glucose_concentration',
+        'glutamine_concentration', 'lactate_concentration', 'ammonia_concentration',
+        'product_concentration', 'aggregated_product'
+    ]
+    
+    noisy_states = []
+    for state in states:
+        noisy_state = state.copy()
+        
+        # Apply Gaussian noise to each measurement variable
+        for var in noisy_variables:
+            if var in noisy_state:
+                # Generate noise factor (1 + gaussian noise with std = measurement_noise)
+                noise_factor = 1 + rng.normal(0, measurement_noise)
+                # Apply noise and ensure non-negative values
+                noisy_state[var] = max(0, noisy_state[var] * noise_factor)
+        
+        noisy_states.append(noisy_state)
+    
+    return noisy_states
 
 
 def get_parameter_changes(segment, original_params):

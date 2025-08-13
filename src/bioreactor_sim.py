@@ -6,19 +6,26 @@ import numpy as np
 
 class BioreactorSimulation:
     """
-    A class to simulate a CHO Cell Perfusion Bioreactor.
+    A class to simulate a CHO Cell Perfusion Bioreactor with mechanistic kinetics.
     
     This simulation models the growth of Chinese Hamster Ovary (CHO) cells in a perfusion bioreactor,
     including cell growth, death, substrate consumption, metabolite production, and environmental effects.
     
     The model includes:
     - Cell growth and death kinetics
-    - Substrate (glucose, glutamine) consumption
+    - Mechanistic glucose consumption (growth-associated + maintenance)
+    - Lactate metabolic switching (production ↔ consumption based on glucose levels)
+    - Substrate (glucose, glutamine) consumption with condition-dependent rates
     - Metabolite (lactate, ammonia) production
     - Product formation
-    - Environmental inhibition effects (pH, temperature)
+    - Environmental inhibition effects (pH, temperature) with asymmetric responses
     - Density-dependent growth limitation
     - Perfusion control based on glucose concentration
+    
+    Key Features:
+    - Glucose uptake follows Pirt model: q_G = glucose_growth_coeff × μ + glucose_maintenance_rate
+    - Lactate metabolism switches between production (high glucose) and consumption (low glucose)
+    - Environmental conditions affect growth rate, which propagates to glucose consumption
     
     Attributes:
         time_step (float): Simulation time step (hours)
@@ -49,12 +56,26 @@ class BioreactorSimulation:
         max_viable_density=20,
         lactate_inhibition_coeff=0.02,
         ammonia_inhibition_coeff=0.03,
-        ph_inhibition_coeff=0.05,
-        temp_inhibition_coeff=0.04,
+        temp_heat_sensitivity=0.8,
+        temp_cold_sensitivity=0.3,
+        temp_death_threshold=42.0,
+        ph_alkaline_sensitivity=0.8,
+        ph_acidic_sensitivity=0.3,
+        ph_death_min=6.5,
+        ph_death_max=8.0,
+        ph_optimal_min=7.0,
+        ph_optimal_max=7.4,
         culture_ph=6.5,
-        optimal_ph=7.2,
         glucose_feed_conc=8.0,
-        glutamine_feed_conc=5.0
+        glutamine_feed_conc=5.0,
+        measurement_noise=0.0,
+        # NEW: Mechanistic glucose and lactate kinetics parameters
+        glucose_growth_coeff=0.5,        # Glucose needed per unit growth (g glucose/g cells)
+        glucose_maintenance_rate=0.01,   # Maintenance glucose consumption (g/(cell·h))
+        lactate_shift_glucose=2.5,       # Glucose level where lactate shifts from production to consumption
+        lactate_switch_steepness=2.0,    # Sharpness of the metabolic switch
+        lactate_consumption_max=0.02,    # Maximum lactate consumption rate per cell
+        lactate_half_saturation=0.5      # Half-saturation constant for lactate consumption
     ):
         self.time_step = time_step
         self.perfusion_rate_base = perfusion_rate_base
@@ -71,12 +92,27 @@ class BioreactorSimulation:
         self.max_viable_density = max_viable_density
         self.lactate_inhibition_coeff = lactate_inhibition_coeff
         self.ammonia_inhibition_coeff = ammonia_inhibition_coeff
-        self.ph_inhibition_coeff = ph_inhibition_coeff
-        self.temp_inhibition_coeff = temp_inhibition_coeff
+        self.temp_heat_sensitivity = temp_heat_sensitivity
+        self.temp_cold_sensitivity = temp_cold_sensitivity
+        self.temp_death_threshold = temp_death_threshold
+        self.ph_alkaline_sensitivity = ph_alkaline_sensitivity
+        self.ph_acidic_sensitivity = ph_acidic_sensitivity
+        self.ph_death_min = ph_death_min
+        self.ph_death_max = ph_death_max
+        self.ph_optimal_min = ph_optimal_min
+        self.ph_optimal_max = ph_optimal_max
         self.culture_ph = culture_ph
-        self.optimal_ph = optimal_ph
         self.glucose_feed_conc = glucose_feed_conc
         self.glutamine_feed_conc = glutamine_feed_conc
+        self.measurement_noise = measurement_noise
+        
+        # NEW: Mechanistic kinetics parameters
+        self.glucose_growth_coeff = glucose_growth_coeff
+        self.glucose_maintenance_rate = glucose_maintenance_rate
+        self.lactate_shift_glucose = lactate_shift_glucose
+        self.lactate_switch_steepness = lactate_switch_steepness
+        self.lactate_consumption_max = lactate_consumption_max
+        self.lactate_half_saturation = lactate_half_saturation
         
         # Initialize state variables
         self.time = 0
@@ -119,6 +155,89 @@ class BioreactorSimulation:
             "pump_active": self.pump_active
         }
 
+    def get_state_with_noise(self):
+        """
+        Get the current state with measurement noise applied for visualization/export.
+        
+        This method applies Gaussian noise to simulate real sensor measurements
+        while preserving the clean simulation data for dynamics calculations.
+        
+        Returns:
+            dict: State dictionary with measurement noise applied to all variables except time and pump_active
+        """
+        state = self.get_state()
+        
+        if self.measurement_noise <= 0:
+            return state
+        
+        # Create a copy to avoid modifying the original state
+        noisy_state = state.copy()
+        
+        # Variables that should have measurement noise applied
+        noisy_variables = [
+            'viable_cell_density', 'dead_cell_density', 'glucose_concentration',
+            'glutamine_concentration', 'lactate_concentration', 'ammonia_concentration',
+            'product_concentration', 'aggregated_product'
+        ]
+        
+        # Initialize random generator
+        rng = np.random.default_rng(None)  # None allows random seeding for realistic noise variation
+        
+        # Apply Gaussian noise to each measurement variable
+        for var in noisy_variables:
+            if var in noisy_state:
+                # Generate noise factor (1 + gaussian noise with std = measurement_noise)
+                noise_factor = 1 + rng.normal(0, self.measurement_noise)
+                # Apply noise and ensure non-negative values
+                noisy_state[var] = max(0, noisy_state[var] * noise_factor)
+        
+        return noisy_state
+
+    def calculate_condition_dependent_glucose_rate(self, specific_growth_rate):
+        """
+        Calculate glucose uptake rate based on growth conditions (Pirt model).
+        
+        Args:
+            specific_growth_rate (float): Current specific growth rate (1/h)
+            
+        Returns:
+            float: Specific glucose uptake rate (g glucose per cell per hour)
+        """
+        # Growth-associated glucose consumption + maintenance glucose consumption
+        growth_glucose = self.glucose_growth_coeff * specific_growth_rate
+        maintenance_glucose = self.glucose_maintenance_rate
+        
+        return max(0.0, growth_glucose + maintenance_glucose)
+
+    def calculate_condition_dependent_lactate_rate(self, glucose_rate):
+        """
+        Calculate lactate production/consumption rate with metabolic switching.
+        
+        Args:
+            glucose_rate (float): Current glucose uptake rate
+            
+        Returns:
+            float: Specific lactate rate (g lactate per cell per hour)
+                   Positive = production, Negative = consumption
+        """
+        # Logistic switching function based on glucose concentration
+        # sigma = 1 (production) when glucose is high, sigma = 0 (consumption) when glucose is low
+        sigma = 1.0 / (1.0 + np.exp(-self.lactate_switch_steepness * 
+                                    (self.glucose_concentration - self.lactate_shift_glucose)))
+        
+        # Production phase: lactate produced from glucose consumption
+        lactate_production = self.lactate_yield_per_glucose * glucose_rate
+        
+        # Consumption phase: lactate consumed with Monod kinetics
+        lactate_consumption = (self.lactate_consumption_max * 
+                              self.lactate_concentration / 
+                              (self.lactate_half_saturation + self.lactate_concentration + 1e-12))
+        
+        # Smooth blend between production and consumption
+        lactate_rate = sigma * lactate_production - (1.0 - sigma) * lactate_consumption
+        
+        return lactate_rate
+
     def simulate_step(self, culture_temp, optimal_temp, dissolved_oxygen_percent,
                      perfusion_rate_high, glucose_threshold):
         """
@@ -147,13 +266,38 @@ class BioreactorSimulation:
             * (dissolved_oxygen_percent / (dissolved_oxygen_percent + self.oxygen_monod_const)) \
             * density_inhibition
         
-        # Apply environmental inhibition factors
+        # Apply environmental inhibition factors with asymmetric temperature response
+        # Calculate temperature factor with asymmetric response (heat more damaging than cold)
+        if culture_temp > self.temp_death_threshold:  # Heat death threshold for CHO cells
+            temp_factor = 0.0  # Complete growth arrest
+        elif culture_temp > optimal_temp:  # Too hot (more sensitive)
+            temp_deviation = culture_temp - optimal_temp
+            temp_factor = np.exp(-self.temp_heat_sensitivity * temp_deviation)  # Configurable heat stress
+        else:  # Too cold (less sensitive)  
+            temp_deviation = optimal_temp - culture_temp
+            temp_factor = np.exp(-self.temp_cold_sensitivity * temp_deviation)  # Configurable cold stress
+        
+        # Calculate pH factor with asymmetric response (alkaline more damaging than acidic)
+        if self.culture_ph < self.ph_death_min or self.culture_ph > self.ph_death_max:  # pH death boundaries
+            ph_factor = 0.0  # Complete growth arrest
+        elif self.ph_optimal_min <= self.culture_ph <= self.ph_optimal_max:  # Optimal pH range
+            ph_factor = 1.0  # No inhibition in optimal range
+        elif self.culture_ph < self.ph_optimal_min:  # Acidic side (less sensitive)
+            ph_deviation = self.ph_optimal_min - self.culture_ph
+            ph_factor = np.exp(-self.ph_acidic_sensitivity * ph_deviation)  # Configurable acidic stress
+        else:  # Alkaline side (more sensitive)
+            ph_deviation = self.culture_ph - self.ph_optimal_max
+            ph_factor = np.exp(-self.ph_alkaline_sensitivity * ph_deviation)  # Configurable alkaline stress
+        
+        # Apply all inhibition factors
         specific_growth_rate *= np.exp(
             -self.lactate_inhibition_coeff * self.lactate_concentration
             - self.ammonia_inhibition_coeff * self.ammonia_concentration
-            - self.ph_inhibition_coeff * abs(self.culture_ph - self.optimal_ph)
-            - self.temp_inhibition_coeff * abs(culture_temp - optimal_temp)
-        )
+        ) * temp_factor * ph_factor  # Apply asymmetric temperature and pH factors separately
+
+        # NEW: Calculate condition-dependent rates
+        condition_glucose_rate = self.calculate_condition_dependent_glucose_rate(specific_growth_rate)
+        condition_lactate_rate = self.calculate_condition_dependent_lactate_rate(condition_glucose_rate)
 
         # Update state variables
         self.viable_cell_density += self.time_step * (
@@ -165,7 +309,7 @@ class BioreactorSimulation:
         )
         
         self.glucose_concentration += self.time_step * (
-            -self.glucose_uptake_rate * self.viable_cell_density + dilution_rate * (self.glucose_feed_conc - self.glucose_concentration)
+            -condition_glucose_rate * self.viable_cell_density + dilution_rate * (self.glucose_feed_conc - self.glucose_concentration)
         )
         
         self.glutamine_concentration += self.time_step * (
@@ -173,8 +317,12 @@ class BioreactorSimulation:
         )
         
         self.lactate_concentration += self.time_step * (
-            self.lactate_yield_per_glucose * self.glucose_uptake_rate * self.viable_cell_density - dilution_rate * self.lactate_concentration
+            condition_lactate_rate * self.viable_cell_density - dilution_rate * self.lactate_concentration
         )
+        
+        # Ensure non-negative concentrations
+        self.glucose_concentration = max(0.0, self.glucose_concentration)
+        self.lactate_concentration = max(0.0, self.lactate_concentration)
         
         self.ammonia_concentration += self.time_step * (
             self.ammonia_yield_per_glutamine * self.glutamine_uptake_rate * self.viable_cell_density - dilution_rate * self.ammonia_concentration
