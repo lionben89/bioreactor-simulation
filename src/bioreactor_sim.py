@@ -1,4 +1,4 @@
-# CHO Cell Perfusion Bioreactor Simulation with Descriptive Variable Names
+# CHO Cell Perfusion Bioreactor Simulation with Simple Kinetics
 
 
 
@@ -6,37 +6,38 @@ import numpy as np
 
 class BioreactorSimulation:
     """
-    A class to simulate a CHO Cell Perfusion Bioreactor with mechanistic kinetics.
+    A class to simulate a CHO Cell Perfusion Bioreactor with simple kinetics.
     
     This simulation models the growth of Chinese Hamster Ovary (CHO) cells in a perfusion bioreactor,
     including cell growth, death, substrate consumption, metabolite production, and environmental effects.
     
     The model includes:
-    - Cell growth and death kinetics
-    - Mechanistic glucose consumption (growth-associated + maintenance)
-    - Lactate metabolic switching (production ↔ consumption based on glucose levels)
-    - Substrate (glucose, glutamine) consumption with condition-dependent rates
-    - Metabolite (lactate, ammonia) production
+    - Cell growth and death kinetics with Monod substrate limitation
+    - Simple glucose and glutamine consumption with constant uptake rates
+    - Simple lactate production with constant production rate
+    - Ammonia production from glutamine consumption
     - Product formation
     - Environmental inhibition effects (pH, temperature) with asymmetric responses
     - Density-dependent growth limitation
     - Perfusion control based on glucose concentration
     
     Key Features:
-    - Glucose uptake follows Pirt model: q_G = glucose_growth_coeff × μ + glucose_maintenance_rate
-    - Lactate metabolism switches between production (high glucose) and consumption (low glucose)
-    - Environmental conditions affect growth rate, which propagates to glucose consumption
+    - Simple substrate uptake: constant rates per cell (glucose_uptake_rate, glutamine_uptake_rate)
+    - Simple lactate production: calculated from glucose consumption using yield coefficient
+    - Asymmetric environmental responses: heat/alkaline conditions more damaging than cold/acidic
+    - Perfusion-based feeding with glucose threshold control
     
     Attributes:
         time_step (float): Simulation time step (hours)
         time (float): Current simulation time
-        viable_cell_density (float): Concentration of viable cells
-        dead_cell_density (float): Concentration of dead cells
-        glucose_concentration (float): Concentration of glucose
-        glutamine_concentration (float): Concentration of glutamine
-        lactate_concentration (float): Concentration of lactate
-        ammonia_concentration (float): Concentration of ammonia
-        product_concentration (float): Concentration of product
+        viable_cell_density (float): Concentration of viable cells (cells/mL)
+        dead_cell_density (float): Concentration of dead cells (cells/mL)
+        glucose_concentration (float): Concentration of glucose (g/L)
+        glutamine_concentration (float): Concentration of glutamine (g/L)
+        lactate_concentration (float): Concentration of lactate (g/L)
+        ammonia_concentration (float): Concentration of ammonia (g/L)
+        product_concentration (float): Concentration of product (g/L)
+        aggregated_product (float): Total product produced including removed product (g/L)
         pump_active (int): Perfusion pump state (0 or 1)
     """
     
@@ -68,15 +69,41 @@ class BioreactorSimulation:
         culture_ph=6.5,
         glucose_feed_conc=8.0,
         glutamine_feed_conc=5.0,
-        measurement_noise=0.0,
-        # NEW: Mechanistic glucose and lactate kinetics parameters
-        glucose_growth_coeff=0.5,        # Glucose needed per unit growth (g glucose/g cells)
-        glucose_maintenance_rate=0.01,   # Maintenance glucose consumption (g/(cell·h))
-        lactate_shift_glucose=2.5,       # Glucose level where lactate shifts from production to consumption
-        lactate_switch_steepness=2.0,    # Sharpness of the metabolic switch
-        lactate_consumption_max=0.02,    # Maximum lactate consumption rate per cell
-        lactate_half_saturation=0.5      # Half-saturation constant for lactate consumption
+        measurement_noise=0.0
     ):
+        """
+        Initialize a new BioreactorSimulation instance.
+        
+        Args:
+            time_step (float): Simulation time step in hours (default: 0.1)
+            perfusion_rate_base (float): Base perfusion rate (1/h) when glucose is above threshold (default: 0.001)
+            max_growth_rate (float): Maximum specific growth rate (1/h) under optimal conditions (default: 0.04)
+            death_rate (float): Specific death rate (1/h) (default: 0.005)
+            glucose_uptake_rate (float): Glucose consumption rate per viable cell (g/cell/h) (default: 0.03)
+            glutamine_uptake_rate (float): Glutamine consumption rate per viable cell (g/cell/h) (default: 0.01)
+            specific_productivity (float): Product formation rate per viable cell (g/cell/h) (default: 0.001)
+            lactate_yield_per_glucose (float): Lactate yield coefficient (g lactate/g glucose) - legacy parameter (default: 0.9)
+            ammonia_yield_per_glutamine (float): Ammonia yield coefficient (g ammonia/g glutamine) (default: 1.2)
+            glucose_monod_const (float): Glucose half-saturation constant for growth (g/L) (default: 0.5)
+            glutamine_monod_const (float): Glutamine half-saturation constant for growth (g/L) (default: 0.3)
+            oxygen_monod_const (float): Oxygen half-saturation constant for growth (%) (default: 5)
+            max_viable_density (float): Maximum viable cell density for density limitation (cells/mL × 10⁶) (default: 20)
+            lactate_inhibition_coeff (float): Lactate inhibition coefficient (L/g) (default: 0.02)
+            ammonia_inhibition_coeff (float): Ammonia inhibition coefficient (L/g) (default: 0.03)
+            temp_heat_sensitivity (float): Temperature sensitivity coefficient for heat stress (1/°C) (default: 0.8)
+            temp_cold_sensitivity (float): Temperature sensitivity coefficient for cold stress (1/°C) (default: 0.3)
+            temp_death_threshold (float): Temperature threshold for cell death (°C) (default: 42.0)
+            ph_alkaline_sensitivity (float): pH sensitivity coefficient for alkaline stress (1/pH unit) (default: 0.8)
+            ph_acidic_sensitivity (float): pH sensitivity coefficient for acidic stress (1/pH unit) (default: 0.3)
+            ph_death_min (float): Minimum pH for cell survival (default: 6.5)
+            ph_death_max (float): Maximum pH for cell survival (default: 8.0)
+            ph_optimal_min (float): Lower bound of optimal pH range (default: 7.0)
+            ph_optimal_max (float): Upper bound of optimal pH range (default: 7.4)
+            culture_ph (float): Current culture pH (default: 6.5)
+            glucose_feed_conc (float): Glucose concentration in feed medium (g/L) (default: 8.0)
+            glutamine_feed_conc (float): Glutamine concentration in feed medium (g/L) (default: 5.0)
+            measurement_noise (float): Measurement noise level (0-1) for realistic sensor simulation (default: 0.0)
+        """
         self.time_step = time_step
         self.perfusion_rate_base = perfusion_rate_base
         self.max_growth_rate = max_growth_rate
@@ -105,14 +132,6 @@ class BioreactorSimulation:
         self.glucose_feed_conc = glucose_feed_conc
         self.glutamine_feed_conc = glutamine_feed_conc
         self.measurement_noise = measurement_noise
-        
-        # NEW: Mechanistic kinetics parameters
-        self.glucose_growth_coeff = glucose_growth_coeff
-        self.glucose_maintenance_rate = glucose_maintenance_rate
-        self.lactate_shift_glucose = lactate_shift_glucose
-        self.lactate_switch_steepness = lactate_switch_steepness
-        self.lactate_consumption_max = lactate_consumption_max
-        self.lactate_half_saturation = lactate_half_saturation
         
         # Initialize state variables
         self.time = 0
@@ -193,51 +212,6 @@ class BioreactorSimulation:
         
         return noisy_state
 
-    def calculate_condition_dependent_glucose_rate(self, specific_growth_rate):
-        """
-        Calculate glucose uptake rate based on growth conditions (Pirt model).
-        
-        Args:
-            specific_growth_rate (float): Current specific growth rate (1/h)
-            
-        Returns:
-            float: Specific glucose uptake rate (g glucose per cell per hour)
-        """
-        # Growth-associated glucose consumption + maintenance glucose consumption
-        growth_glucose = self.glucose_growth_coeff * specific_growth_rate
-        maintenance_glucose = self.glucose_maintenance_rate
-        
-        return max(0.0, growth_glucose + maintenance_glucose)
-
-    def calculate_condition_dependent_lactate_rate(self, glucose_rate):
-        """
-        Calculate lactate production/consumption rate with metabolic switching.
-        
-        Args:
-            glucose_rate (float): Current glucose uptake rate
-            
-        Returns:
-            float: Specific lactate rate (g lactate per cell per hour)
-                   Positive = production, Negative = consumption
-        """
-        # Logistic switching function based on glucose concentration
-        # sigma = 1 (production) when glucose is high, sigma = 0 (consumption) when glucose is low
-        sigma = 1.0 / (1.0 + np.exp(-self.lactate_switch_steepness * 
-                                    (self.glucose_concentration - self.lactate_shift_glucose)))
-        
-        # Production phase: lactate produced from glucose consumption
-        lactate_production = self.lactate_yield_per_glucose * glucose_rate
-        
-        # Consumption phase: lactate consumed with Monod kinetics
-        lactate_consumption = (self.lactate_consumption_max * 
-                              self.lactate_concentration / 
-                              (self.lactate_half_saturation + self.lactate_concentration + 1e-12))
-        
-        # Smooth blend between production and consumption
-        lactate_rate = sigma * lactate_production - (1.0 - sigma) * lactate_consumption
-        
-        return lactate_rate
-
     def simulate_step(self, culture_temp, optimal_temp, dissolved_oxygen_percent,
                      perfusion_rate_high, glucose_threshold):
         """
@@ -295,10 +269,6 @@ class BioreactorSimulation:
             - self.ammonia_inhibition_coeff * self.ammonia_concentration
         ) * temp_factor * ph_factor  # Apply asymmetric temperature and pH factors separately
 
-        # NEW: Calculate condition-dependent rates
-        condition_glucose_rate = self.calculate_condition_dependent_glucose_rate(specific_growth_rate)
-        condition_lactate_rate = self.calculate_condition_dependent_lactate_rate(condition_glucose_rate)
-
         # Update state variables
         self.viable_cell_density += self.time_step * (
             specific_growth_rate * self.viable_cell_density - self.death_rate * self.viable_cell_density
@@ -309,7 +279,7 @@ class BioreactorSimulation:
         )
         
         self.glucose_concentration += self.time_step * (
-            -condition_glucose_rate * self.viable_cell_density + dilution_rate * (self.glucose_feed_conc - self.glucose_concentration)
+            -self.glucose_uptake_rate * self.viable_cell_density + dilution_rate * (self.glucose_feed_conc - self.glucose_concentration)
         )
         
         self.glutamine_concentration += self.time_step * (
@@ -317,7 +287,7 @@ class BioreactorSimulation:
         )
         
         self.lactate_concentration += self.time_step * (
-            condition_lactate_rate * self.viable_cell_density - dilution_rate * self.lactate_concentration
+            self.lactate_yield_per_glucose * self.glucose_uptake_rate * self.viable_cell_density - dilution_rate * self.lactate_concentration
         )
         
         # Ensure non-negative concentrations

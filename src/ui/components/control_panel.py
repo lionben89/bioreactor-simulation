@@ -85,7 +85,7 @@ def render_timeline_slider():
             0.0, 
             max_time, 
             st.session_state.current_time_point,
-            step=0.1,
+            step=st.session_state.base_parameters['time_step'],
             key="timeline_slider"
         )
 

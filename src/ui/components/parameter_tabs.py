@@ -180,87 +180,29 @@ def render_growth_parameters():
             key="specific_productivity"
         )
     
-    # NEW: Mechanistic Glucose Kinetics - Primary section
-    with st.sidebar.expander("🔬 Mechanistic Glucose Kinetics", expanded=True):
-        st.markdown("**Condition-Dependent Glucose Consumption (Pirt Model)**")
-        st.info("q_G = glucose_growth_coeff × μ + glucose_maintenance_rate")
-        
-        glucose_growth_coeff = st.number_input(
-            "Growth-Associated Glucose (Y_G/X⁻¹)", 
-            value=0.5, 
+    with st.sidebar.expander("Substrate Uptake", expanded=False):
+        glucose_uptake_rate = st.number_input(
+            "Glucose Uptake Rate (q_G)", 
+            value=0.05, 
             min_value=0.0,
-            help="Glucose needed per unit growth - scales with growth rate (g glucose/g cells)",
-            key="glucose_growth_coeff"
+            help="Glucose consumption rate per viable cell (g/cell/h)",
+            key="glucose_uptake_rate"
         )
-        glucose_maintenance_rate = st.number_input(
-            "Maintenance Glucose (m_G)", 
-            value=0.01, 
-            min_value=0.0,
-            help="Baseline glucose consumption for cell maintenance (g glucose per cell per hour)",
-            key="glucose_maintenance_rate"
-        )
-        
-        st.markdown("💡 **Benefit**: Glucose consumption automatically responds to culture conditions!")
-    
-    # NEW: Mechanistic Lactate Switching - Primary section  
-    with st.sidebar.expander("🔄 Mechanistic Lactate Switching", expanded=True):
-        st.markdown("**Metabolic Switching: Production ↔ Consumption**")
-        st.info("High glucose → Lactate production | Low glucose → Lactate consumption")
-        
-        lactate_shift_glucose = st.number_input(
-            "Glucose Shift Threshold (G_shift)", 
-            value=2.5, 
-            min_value=0.0,
-            help="Glucose level where metabolism shifts between production and consumption (g/L)",
-            key="lactate_shift_glucose"
-        )
-        lactate_switch_steepness = st.number_input(
-            "Switch Steepness (k)", 
-            value=2.0, 
-            min_value=0.1,
-            help="Sharpness of metabolic transition (higher = more abrupt switch)",
-            key="lactate_switch_steepness"
-        )
-        lactate_consumption_max = st.number_input(
-            "Max Lactate Consumption (q_L,max)", 
-            value=0.02, 
-            min_value=0.0,
-            help="Maximum lactate consumption rate per cell (g lactate per cell per hour)",
-            key="lactate_consumption_max"
-        )
-        lactate_half_saturation = st.number_input(
-            "Lactate Half-Saturation (K_L)", 
-            value=0.5, 
-            min_value=0.0,
-            help="Half-saturation constant for lactate consumption kinetics (g/L)",
-            key="lactate_half_saturation"
-        )
-        
-        st.markdown("💡 **Benefit**: Realistic CHO cell lactate metabolism with glycolytic shift!")
-    
-    # Simple glutamine kinetics (constant rate model)
-    with st.sidebar.expander("Simple Glutamine Kinetics", expanded=False):
         glutamine_uptake_rate = st.number_input(
             "Glutamine Uptake Rate (q_Q)", 
             value=0.01, 
             min_value=0.0,
-            help="Glutamine consumption rate per viable cell (g/cell/h) - simple constant rate",
+            help="Glutamine consumption rate per viable cell (g/cell/h)",
             key="glutamine_uptake_rate"
         )
-        st.markdown("ℹ️ *Uses simple constant rate - could be upgraded to mechanistic model*")
     
     return {
         "max_growth_rate": max_growth_rate,
         "death_rate": death_rate,
         "max_viable_density": max_viable_density,
         "specific_productivity": specific_productivity,
-        "glutamine_uptake_rate": glutamine_uptake_rate,
-        "glucose_growth_coeff": glucose_growth_coeff,
-        "glucose_maintenance_rate": glucose_maintenance_rate,
-        "lactate_shift_glucose": lactate_shift_glucose,
-        "lactate_switch_steepness": lactate_switch_steepness,
-        "lactate_consumption_max": lactate_consumption_max,
-        "lactate_half_saturation": lactate_half_saturation
+        "glucose_uptake_rate": glucose_uptake_rate,
+        "glutamine_uptake_rate": glutamine_uptake_rate
     }
 
 # ==================== MEDIA PARAMETERS ====================
@@ -315,8 +257,6 @@ def render_media_parameters():
             help="Mass of ammonia produced per mass of glutamine consumed (g/g)",
             key="ammonia_yield_per_glutamine"
         )
-        
-        st.markdown("ℹ️ *Lactate now uses mechanistic switching model, ammonia still uses simple yield*")
     
     return {
         "glucose_monod_const": glucose_monod_const,
@@ -380,7 +320,7 @@ def render_environment_parameters():
         
         optimal_temp = st.number_input(
             "Optimal Temperature (°C)", 
-            value=37,
+            value=37.0,
             help="Optimal temperature for maximum cell growth (°C)",
             key="optimal_temp"
         )
@@ -469,7 +409,7 @@ def render_environment_parameters():
         with col2:
             culture_temp = st.number_input(
                 "Culture Temp (°C)", 
-                value=22,
+                value=22.0,
                 help="Current temperature of the culture (°C)",
                 key="culture_temp"
             )

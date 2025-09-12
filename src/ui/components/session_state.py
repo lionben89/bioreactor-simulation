@@ -66,7 +66,6 @@ def get_max_simulation_time():
     
     return max([max([s['time'] for s in seg['states']]) for seg in st.session_state.simulation_segments])
 
-
 def has_simulation_data():
     """
     Check if any simulation data exists in session state.

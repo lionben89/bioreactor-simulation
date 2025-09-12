@@ -122,7 +122,14 @@ def run_fork_simulation(base_parameters):
                 st.success(f"Fork simulation completed from {st.session_state.current_time_point:.1f} hours!")
                 return True
         
-        st.error("Could not find state at current time point")
+        # Better error reporting
+        available_times = []
+        for segment in st.session_state.simulation_segments:
+            for state in segment['states'][:5]:  # Show first 5 times
+                available_times.append(f"{state['time']:.2f}")
+        
+        st.error(f"Could not find state at time {st.session_state.current_time_point:.1f} hours. "
+                f"Available times start with: {', '.join(available_times)}...")
         return False
 
 
@@ -141,6 +148,7 @@ def create_simulator(parameters):
         perfusion_rate_base=parameters['perfusion_rate_base'],
         max_growth_rate=parameters['max_growth_rate'],
         death_rate=parameters['death_rate'],
+        glucose_uptake_rate=parameters['glucose_uptake_rate'],
         glutamine_uptake_rate=parameters['glutamine_uptake_rate'],
         specific_productivity=parameters['specific_productivity'],
         lactate_yield_per_glucose=parameters['lactate_yield_per_glucose'],
@@ -163,13 +171,7 @@ def create_simulator(parameters):
         culture_ph=parameters['culture_ph'],
         glucose_feed_conc=parameters['glucose_feed_conc'],
         glutamine_feed_conc=parameters['glutamine_feed_conc'],
-        measurement_noise=parameters['measurement_noise'],
-        glucose_growth_coeff=parameters['glucose_growth_coeff'],
-        glucose_maintenance_rate=parameters['glucose_maintenance_rate'],
-        lactate_shift_glucose=parameters['lactate_shift_glucose'],
-        lactate_switch_steepness=parameters['lactate_switch_steepness'],
-        lactate_consumption_max=parameters['lactate_consumption_max'],
-        lactate_half_saturation=parameters['lactate_half_saturation']
+        measurement_noise=parameters['measurement_noise']
     )
 
 
@@ -183,9 +185,24 @@ def find_state_at_time(target_time):
     Returns:
         dict: State dictionary at target time, or None if not found
     """
+    # Special case: if target_time is 0.0, return the earliest state
+    if target_time <= 0.01:  # Handle time 0.0 with small tolerance
+        earliest_state = None
+        earliest_time = float('inf')
+        
+        for segment in st.session_state.simulation_segments:
+            for state in segment['states']:
+                if state['time'] < earliest_time:
+                    earliest_time = state['time']
+                    earliest_state = state
+        
+        if earliest_state:
+            return earliest_state
+    
+    # Normal case: find state at specific time
     for segment in st.session_state.simulation_segments:
         for state in segment['states']:
-            if abs(state['time'] - target_time) < 0.01:
+            if abs(state['time'] - target_time) <= 0.01:
                 return state
     return None
 
