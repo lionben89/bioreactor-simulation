@@ -55,10 +55,38 @@ def render_initial_parameters():
             help="Glutamine concentration in the feed medium (g/L)",
             key="glutamine_feed_conc"
         )
+    with st.sidebar.expander("Current Culture Conditions", expanded=True):
+        # Current culture conditions
+        dissolved_oxygen_percent = st.number_input(
+            "Dissolved Oxygen (%)", 
+            value=100, 
+            min_value=0,
+            help="Dissolved oxygen saturation level (%) - affects growth rate",
+            key="dissolved_oxygen_percent"
+        )
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            culture_ph = st.number_input(
+                "Culture pH", 
+                value=6.5,
+                help="Current pH of the culture medium",
+                key="culture_ph"
+            )
+        with col2:
+            culture_temp = st.number_input(
+                "Culture Temp (°C)", 
+                value=22.0,
+                help="Current temperature of the culture (°C)",
+                key="culture_temp"
+            )
     
     return {
         "glucose_feed_conc": glucose_feed_conc,
-        "glutamine_feed_conc": glutamine_feed_conc
+        "glutamine_feed_conc": glutamine_feed_conc,
+        "dissolved_oxygen_percent": dissolved_oxygen_percent,
+        "culture_ph": culture_ph,
+        "culture_temp": culture_temp
     }
 
 # ==================== OPERATION PARAMETERS ====================
@@ -282,13 +310,6 @@ def render_environment_parameters():
     
     with st.sidebar.expander("Oxygen & Metabolite Inhibition", expanded=False):
         # Oxygen availability and metabolite inhibition
-        dissolved_oxygen_percent = st.number_input(
-            "Dissolved Oxygen (%)", 
-            value=100, 
-            min_value=0,
-            help="Dissolved oxygen saturation level (%) - affects growth rate",
-            key="dissolved_oxygen_percent"
-        )
         oxygen_monod_const = st.number_input(
             "Oxygen Monod Constant (K_DO)", 
             value=5.0, 
@@ -394,26 +415,6 @@ def render_environment_parameters():
             key="ph_alkaline_sensitivity"
         )
     
-    with st.sidebar.expander("Current Culture Conditions", expanded=True):
-        # Current culture conditions
-        st.markdown("**Set Current Operating Conditions**")
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            culture_ph = st.number_input(
-                "Culture pH", 
-                value=6.5,
-                help="Current pH of the culture medium",
-                key="culture_ph"
-            )
-        with col2:
-            culture_temp = st.number_input(
-                "Culture Temp (°C)", 
-                value=22.0,
-                help="Current temperature of the culture (°C)",
-                key="culture_temp"
-            )
-    
     # ===== MEASUREMENT SYSTEM PARAMETERS =====
     with st.expander("📊 Measurement System", expanded=False):
         st.markdown("**Sensor and measurement system parameters**")
@@ -431,7 +432,6 @@ def render_environment_parameters():
         ) / 100.0  # Convert percentage to decimal
     
     return {
-        "dissolved_oxygen_percent": dissolved_oxygen_percent,
         "oxygen_monod_const": oxygen_monod_const,
         "lactate_inhibition_coeff": lactate_inhibition_coeff,
         "ammonia_inhibition_coeff": ammonia_inhibition_coeff,
@@ -444,8 +444,6 @@ def render_environment_parameters():
         "ph_death_max": ph_death_max,
         "ph_optimal_min": ph_optimal_min,
         "ph_optimal_max": ph_optimal_max,
-        "culture_ph": culture_ph,
-        "culture_temp": culture_temp,
         "optimal_temp": optimal_temp,
         "measurement_noise": measurement_noise
     }
