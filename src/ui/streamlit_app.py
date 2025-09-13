@@ -20,6 +20,7 @@ Architecture:
 """
 
 import streamlit as st
+import datetime
 
 # Import modular components
 from components import (
@@ -35,6 +36,8 @@ from components import (
     export_design_matrix,
     render_batch_controls,
 )
+from components.doe_parameters import render_response_selection
+from components.doe_optimization import render_optimization_interface
 
 def main():
     """
@@ -74,7 +77,28 @@ def main():
         # SIDEBAR: SIMULATION PARAMETERS
         with st.sidebar:
             st.title("⚙️ Simulation Parameters")
+            
+            # Check if optimal parameters from DoE are available
+            if st.session_state.get('optimal_run_params') and st.session_state.get('run_optimal_requested', False):
+                st.success("🎯 **Optimal DoE Parameters Loaded!**")
+                st.info("Parameters have been automatically set from DoE optimization. You can adjust them below if needed.")
+                
+                # Display loaded parameters
+                with st.expander("📋 View Loaded Optimal Parameters", expanded=False):
+                    for param_name, value in st.session_state.optimal_run_params.items():
+                        st.write(f"• {param_name}: {value:.3f}")
+                
+                # Clear the request flag (but keep the parameters)
+                st.session_state.run_optimal_requested = False
+            
             base_parameters = render_parameter_tabs()
+            
+            # Override with optimal parameters if they exist
+            if st.session_state.get('optimal_run_params'):
+                # Apply optimal parameters to base parameters
+                for param_name, optimal_value in st.session_state.optimal_run_params.items():
+                    if param_name in base_parameters:
+                        base_parameters[param_name] = optimal_value
 
         # MAIN SIMULATION INTERFACE
         # Render control panel and check if simulation should start
@@ -82,9 +106,33 @@ def main():
 
         # Execute simulation if requested
         if start_simulation or st.session_state.is_running_simulation:
+            # Check if this is an optimal parameter run
+            is_optimal_run = st.session_state.get('optimal_run_params') is not None
+            
             simulation_results = execute_simulation(base_parameters)
             if simulation_results:  # Check if we got results (non-empty list)
                 st.session_state.is_running_simulation = False
+                
+                # If these results came from optimal parameters, store execution info
+                if is_optimal_run:
+                    # Calculate fork number for the optimal run
+                    max_segment_id = st.session_state.get('max_segment_id', 0)
+                    fork_number = max_segment_id + 1
+                    st.session_state.max_segment_id = fork_number
+                    
+                    # Store optimal execution results
+                    st.session_state.optimal_execution_results = {
+                        'fork_number': fork_number,
+                        'simulation_results': simulation_results,
+                        'executed_params': st.session_state.optimal_run_params.copy(),
+                        'timestamp': datetime.datetime.now()
+                    }
+                    
+                    st.success(f"✅ Optimal parameters simulation completed! Fork #{fork_number}")
+                    
+                    # Clear optimal params after successful run
+                    st.session_state.optimal_run_params = None
+                
                 st.rerun()
 
         # Render visualization layout
@@ -155,19 +203,21 @@ def main():
                         key="lhs_samples"
                     )
                     st.sidebar.info(f"Samples: **{lhs_runs}**")
-        
+            
+            # Render response selection interface
+            selected_responses = render_response_selection()
+            
+            # Store selected responses in session state for optimization
+            if selected_responses:
+                st.session_state['doe_selected_responses'] = selected_responses
+            
         # MAIN DoE INTERFACE
         st.header("🧪 Design of Experiments with DoEgen")
         
         if not selected_params:
             # Show parameter selection guidance when no parameters selected
             st.markdown("""
-            ## 📋 Get Started with DoE
-            
-            **Step 1**: Select parameters to study in the sidebar
-            
-            Choose which bioreactor parameters you want to investigate in your experimental design. 
-            Consider starting with 2-4 key parameters that you suspect have the biggest impact on your process.
+            📋 **Step 1**: Select parameters to study in the sidebar
             """)
             
         else:
@@ -263,6 +313,7 @@ def main():
                             st.session_state.doe_design_properties = None
                             st.session_state.doe_batch_results = None
                             st.session_state.doe_selected_params = {}
+                            st.session_state.doe_selected_responses = {}
                             st.rerun()
                     
                     # Render the design matrix
@@ -283,6 +334,16 @@ def main():
                         st.session_state['doe_design_matrix'],
                         st.session_state['doe_design_properties']
                     )
+                    
+                    # Optimization interface (if batch results exist)
+                    if ('doe_batch_results' in st.session_state and 
+                        st.session_state['doe_batch_results'] is not None):
+                        st.markdown("---")
+                        render_optimization_interface(
+                            st.session_state['doe_batch_results']['results_df'],
+                            st.session_state.get('doe_selected_params', {}),
+                            st.session_state.get('doe_selected_responses', {})
+                        )
                 
                 else:
                     st.info("Click 'Generate Design' above to create your experimental matrix!")
@@ -290,47 +351,6 @@ def main():
                 # Placeholder for future DoE generation button
                 # if st.button("🔄 Generate DoE Design (Coming Soon)", disabled=True):
                 #     st.warning("DoE design generation will be implemented in Phase 2!")
-        
-        # Show DoE methodology information
-        with st.expander("DoE Methodology Guide", expanded=False):
-            st.markdown("""
-            ### 🎯 **Design of Experiments (DoE) Overview**
-            
-            DoE is a systematic method to determine the relationship between factors affecting a process and the output of that process.
-            
-            **Benefits for Bioreactor Optimization:**
-            - **Efficiency**: Get maximum information with minimum experiments
-            - **Interactions**: Discover how parameters work together
-            - **Optimization**: Find optimal operating conditions systematically
-            - **Robustness**: Understand process sensitivity and stability
-            
-            ### 📊 **When to Use Each DoE Type:**
-            
-            **🔍 Full Factorial**
-            - Complete exploration of all factor combinations
-            - Best when you need to understand all interactions
-            - Use with 2-4 factors to keep run count manageable
-            
-            **📈 Central Composite Design (CCD)**
-            - Response surface methodology for optimization
-            - Includes center points and axial points
-            - Excellent for finding optimal conditions
-            
-            **⚡ Plackett-Burman**
-            - Efficient screening of many factors
-            - Identifies which factors are most important
-            - Use when you have >6 potential factors
-            
-            **🎯 Box-Behnken**
-            - Efficient alternative to CCD
-            - Fewer experiments than CCD
-            - Good for 3-6 factors
-            
-            **🌐 Latin Hypercube Sampling**
-            - Space-filling experimental design
-            - Good for computer experiments
-            - Flexible sample size
-            """)
 
 if __name__ == "__main__":
     main()

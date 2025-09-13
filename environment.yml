@@ -7,3 +7,5 @@ dependencies:
 - streamlit
 - plotly
 - doegen
+- scikit-learn
+- scipy

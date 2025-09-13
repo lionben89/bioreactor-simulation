@@ -237,3 +237,113 @@ def validate_parameter_selection(selected_params: Dict[str, Any]) -> tuple[bool,
     
     is_valid = len(errors) == 0
     return is_valid, errors
+
+
+def render_response_selection() -> Dict[str, Any]:
+    """
+    Render the response/output selection interface for optimization.
+    
+    Returns:
+        dict: Dictionary of selected responses with optimization objectives
+    """
+    st.sidebar.markdown("### 🎯 Response Selection")
+    st.sidebar.markdown("Choose outputs to optimize:")
+    
+    # Initialize response selection in session state
+    if 'doe_selected_responses' not in st.session_state:
+        st.session_state.doe_selected_responses = {}
+    
+    # Available responses from simulation results
+    available_responses = {
+        "viable_cell_density": {
+            "description": "Final viable cell density",
+            "units": "cells/mL×10⁶",
+            "default_objective": "maximize"
+        },
+        "aggregated_product": {
+            "description": "Total product produced", 
+            "units": "g/L",
+            "default_objective": "maximize"
+        },
+        "lactate_concentration": {
+            "description": "Final lactate concentration",
+            "units": "g/L", 
+            "default_objective": "minimize"
+        },
+        "ammonia_concentration": {
+            "description": "Final ammonia concentration",
+            "units": "g/L",
+            "default_objective": "minimize"
+        },
+        "glucose_concentration": {
+            "description": "Final glucose concentration", 
+            "units": "g/L",
+            "default_objective": "maximize"
+        },
+        "product_concentration": {
+            "description": "Final product concentration",
+            "units": "g/L",
+            "default_objective": "maximize"
+        }
+    }
+    
+    selected_responses = {}
+    
+    for response_name, response_info in available_responses.items():
+        # Check if previously selected
+        previously_selected = response_name in st.session_state.doe_selected_responses
+        
+        # Checkbox for response selection
+        is_selected = st.sidebar.checkbox(
+            f"{response_name}",
+            value=previously_selected,
+            key=f"doe_response_{response_name}",
+            help=f"{response_info['description']} ({response_info['units']})"
+        )
+        
+        if is_selected:
+            # Get previous objective or use default
+            prev_objective = response_info["default_objective"]
+            if response_name in st.session_state.doe_selected_responses:
+                prev_objective = st.session_state.doe_selected_responses[response_name]["objective"]
+            
+            # Objective selection (maximize/minimize)
+            objective = st.sidebar.selectbox(
+                "Objective",
+                ["maximize", "minimize"],
+                index=0 if prev_objective == "maximize" else 1,
+                key=f"doe_obj_{response_name}"
+            )
+            
+            # Store response data
+            response_data = {
+                "objective": objective,
+                "description": response_info["description"],
+                "units": response_info["units"]
+            }
+            
+            selected_responses[response_name] = response_data
+            st.session_state.doe_selected_responses[response_name] = response_data
+        else:
+            # Remove if deselected
+            if response_name in st.session_state.doe_selected_responses:
+                del st.session_state.doe_selected_responses[response_name]
+    
+    # Update session state
+    st.session_state.doe_selected_responses = selected_responses
+    
+    # Show selection summary
+    if selected_responses:
+        st.sidebar.markdown("---")
+        st.sidebar.markdown("### 🎯 Optimization Summary")
+        
+        maximize_count = sum(1 for r in selected_responses.values() if r["objective"] == "maximize")
+        minimize_count = sum(1 for r in selected_responses.values() if r["objective"] == "minimize")
+        
+        st.sidebar.success(f"**{len(selected_responses)} responses selected**")
+        st.sidebar.write(f"• Maximize: {maximize_count}")
+        st.sidebar.write(f"• Minimize: {minimize_count}")
+    else:
+        st.sidebar.info("👆 Select responses to optimize")
+    
+    return selected_responses

@@ -51,6 +51,9 @@ def initialize_session_state():
     
     if 'doe_selected_params' not in st.session_state:
         st.session_state.doe_selected_params = {}  # DoE parameter selections
+    
+    if 'doe_selected_responses' not in st.session_state:
+        st.session_state.doe_selected_responses = {}  # DoE response selections for optimization
 
 
 def reset_simulation_state():
@@ -77,6 +80,7 @@ def reset_simulation_state():
     st.session_state.doe_design_properties = None
     st.session_state.doe_batch_results = None
     st.session_state.doe_selected_params = {}
+    st.session_state.doe_selected_responses = {}
 
 
 def get_max_simulation_time():
@@ -121,3 +125,4 @@ def clear_doe_state():
     st.session_state.doe_design_properties = None
     st.session_state.doe_batch_results = None
     st.session_state.doe_selected_params = {}
+    st.session_state.doe_selected_responses = {}
