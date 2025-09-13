@@ -29,7 +29,7 @@ def execute_simulation(base_parameters):
         base_parameters (dict): Current simulation parameters
     
     Returns:
-        bool: True if simulation completed successfully, False otherwise
+        list: List of simulation states if successful, empty list if failed
     """
     if not st.session_state.simulation_segments:
         return run_initial_simulation(base_parameters)
@@ -45,34 +45,38 @@ def run_initial_simulation(base_parameters):
         base_parameters (dict): Base simulation parameters
         
     Returns:
-        bool: True if simulation completed successfully
+        list: List of simulation states if successful, empty list if failed
     """
-    with st.spinner("Running initial simulation..."):
-        # Create new simulator instance with base parameters
-        simulator = create_simulator(base_parameters)
-        
-        # Run complete simulation
-        states = simulator.simulate_all(
-            base_parameters['total_hours'],
-            culture_temp=base_parameters['culture_temp'],
-            optimal_temp=base_parameters['optimal_temp'],
-            dissolved_oxygen_percent=base_parameters['dissolved_oxygen_percent'],
-            perfusion_rate_high=base_parameters['perfusion_rate_high'],
-            glucose_threshold=base_parameters['glucose_threshold']
-        )
-        
-        # Store as first segment (Original)
-        st.session_state.simulation_segments.append({
-            'start_time': 0.0,
-            'end_time': base_parameters['total_hours'],
-            'states': states,
-            'parameters': copy.deepcopy(base_parameters),
-            'is_fork': False,
-            'segment_id': 0
-        })
-        
-    st.success("Initial simulation completed!")
-    return True
+    try:
+        with st.spinner("Running initial simulation..."):
+            # Create new simulator instance with base parameters
+            simulator = create_simulator(base_parameters)
+            
+            # Run complete simulation
+            states = simulator.simulate_all(
+                base_parameters['total_hours'],
+                culture_temp=base_parameters['culture_temp'],
+                optimal_temp=base_parameters['optimal_temp'],
+                dissolved_oxygen_percent=base_parameters['dissolved_oxygen_percent'],
+                perfusion_rate_high=base_parameters['perfusion_rate_high'],
+                glucose_threshold=base_parameters['glucose_threshold']
+            )
+            
+            # Store as first segment (Original)
+            st.session_state.simulation_segments.append({
+                'start_time': 0.0,
+                'end_time': base_parameters['total_hours'],
+                'states': states,
+                'parameters': copy.deepcopy(base_parameters),
+                'is_fork': False,
+                'segment_id': 0
+            })
+            
+        st.success("Initial simulation completed!")
+        return states
+    except Exception as e:
+        st.error(f"Simulation failed: {str(e)}")
+        return []
 
 
 def run_fork_simulation(base_parameters):
@@ -83,54 +87,57 @@ def run_fork_simulation(base_parameters):
         base_parameters (dict): Modified simulation parameters for the fork
         
     Returns:
-        bool: True if simulation completed successfully
+        list: List of simulation states if successful, empty list if failed
     """
-    with st.spinner(f"Running simulation from {st.session_state.current_time_point:.1f} hours..."):
-        # Find the exact state at current time point from existing segments
-        current_state = find_state_at_time(st.session_state.current_time_point)
-        
-        if current_state:
-            # Create new simulator with modified parameters
-            simulator = create_simulator(base_parameters)
+    try:
+        with st.spinner(f"Running simulation from {st.session_state.current_time_point:.1f} hours..."):
+            # Find the exact state at current time point from existing segments
+            current_state = find_state_at_time(st.session_state.current_time_point)
             
-            # Restore simulator state to current time point
-            restore_simulator_state(simulator, current_state)
+            if current_state:
+                # Create new simulator with modified parameters
+                simulator = create_simulator(base_parameters)
+                
+                # Restore simulator state to current time point
+                restore_simulator_state(simulator, current_state)
+                
+                # Run simulation from current point to completion
+                remaining_time = base_parameters['total_hours'] - st.session_state.current_time_point
+                if remaining_time > 0:
+                    states = simulator.simulate_all(
+                        remaining_time,
+                        culture_temp=base_parameters['culture_temp'],
+                        optimal_temp=base_parameters['optimal_temp'],
+                        dissolved_oxygen_percent=base_parameters['dissolved_oxygen_percent'],
+                        perfusion_rate_high=base_parameters['perfusion_rate_high'],
+                        glucose_threshold=base_parameters['glucose_threshold']
+                    )
+                    
+                    # Add as new fork segment
+                    next_id = max([seg['segment_id'] for seg in st.session_state.simulation_segments]) + 1
+                    st.session_state.simulation_segments.append({
+                        'start_time': st.session_state.current_time_point,
+                        'end_time': base_parameters['total_hours'],
+                        'states': states,
+                        'parameters': copy.deepcopy(base_parameters),
+                        'is_fork': True,
+                        'segment_id': next_id
+                    })
+                    
+                    return states
             
-            # Run simulation from current point to completion
-            remaining_time = base_parameters['total_hours'] - st.session_state.current_time_point
-            if remaining_time > 0:
-                states = simulator.simulate_all(
-                    remaining_time,
-                    culture_temp=base_parameters['culture_temp'],
-                    optimal_temp=base_parameters['optimal_temp'],
-                    dissolved_oxygen_percent=base_parameters['dissolved_oxygen_percent'],
-                    perfusion_rate_high=base_parameters['perfusion_rate_high'],
-                    glucose_threshold=base_parameters['glucose_threshold']
-                )
-                
-                # Add as new fork segment
-                next_id = max([seg['segment_id'] for seg in st.session_state.simulation_segments]) + 1
-                st.session_state.simulation_segments.append({
-                    'start_time': st.session_state.current_time_point,
-                    'end_time': base_parameters['total_hours'],
-                    'states': states,
-                    'parameters': copy.deepcopy(base_parameters),
-                    'is_fork': True,
-                    'segment_id': next_id
-                })
-                
-                st.success(f"Fork simulation completed from {st.session_state.current_time_point:.1f} hours!")
-                return True
-        
-        # Better error reporting
-        available_times = []
-        for segment in st.session_state.simulation_segments:
-            for state in segment['states'][:5]:  # Show first 5 times
-                available_times.append(f"{state['time']:.2f}")
-        
-        st.error(f"Could not find state at time {st.session_state.current_time_point:.1f} hours. "
-                f"Available times start with: {', '.join(available_times)}...")
-        return False
+            # Better error reporting
+            available_times = []
+            for segment in st.session_state.simulation_segments:
+                for state in segment['states'][:5]:  # Show first 5 times
+                    available_times.append(f"{state['time']:.2f}")
+            
+            st.error(f"Could not find state at time {st.session_state.current_time_point:.1f} hours. "
+                    f"Available times start with: {', '.join(available_times)}...")
+            return []
+    except Exception as e:
+        st.error(f"Fork simulation failed: {str(e)}")
+        return []
 
 
 def create_simulator(parameters):

@@ -84,7 +84,7 @@ def render_plots_grid(original_params):
                         original_params,
                         show_legend=True  # Show legend on every plot
                     )
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, use_container_width=True, key=f"plot_{variable}_{row}_{col}")
 
 
 def create_individual_plot(variable_name, segments, current_time_point, original_params, show_legend=False):
@@ -170,56 +170,123 @@ def create_individual_plot(variable_name, segments, current_time_point, original
     return fig
 
 
+@st.fragment
 def render_comprehensive_legend(original_params):
     """
-    Render comprehensive legend showing all segments with parameter changes.
+    Render comprehensive legend showing up to 5 segments at a time with pagination.
     
     Args:
         original_params (dict): Original simulation parameters for comparison
     """
     st.markdown("### Legend")
-    legend_cols = st.columns(len(st.session_state.simulation_segments))
-    colors = ['blue', 'red', 'green', 'orange', 'purple', 'brown']
     
-    # Create legend entry for each simulation segment
-    for i, segment in enumerate(st.session_state.simulation_segments):
-        color = colors[i % len(colors)]
-        segment_name = f"Fork {segment['segment_id']}" if segment['is_fork'] else "Original"
+    # Initialize pagination state
+    if 'legend_page' not in st.session_state:
+        st.session_state.legend_page = 0
+    
+    # Store previous segment count to detect changes
+    if 'legend_prev_segment_count' not in st.session_state:
+        st.session_state.legend_prev_segment_count = 0
+    
+    segments = st.session_state.simulation_segments
+    segments_per_page = 5
+    total_pages = max(1, (len(segments) + segments_per_page - 1) // segments_per_page)  # Ceiling division, min 1
+    
+    # Reset page if number of segments changed (new fork added or segments reset)
+    if len(segments) != st.session_state.legend_prev_segment_count:
+        # If segments were reduced (like reset), go to page 0
+        # If segments were added, stay on current page if valid, otherwise go to last page
+        if len(segments) < st.session_state.legend_prev_segment_count:
+            st.session_state.legend_page = 0
+        else:
+            # Ensure current page is valid
+            st.session_state.legend_page = min(st.session_state.legend_page, total_pages - 1)
         
-        with legend_cols[i]:
-            # Create visual line indicator for segment
-            mini_fig = go.Figure()
-            mini_fig.add_trace(
-                go.Scatter(
-                    x=[0, 1],
-                    y=[0, 0],
-                    mode='lines',
-                    line={'color': color, 'dash': 'dash' if segment['is_fork'] else 'solid', 'width': 3},
-                    showlegend=False
-                )
+        st.session_state.legend_prev_segment_count = len(segments)
+    
+    # Ensure current page is within bounds
+    st.session_state.legend_page = max(0, min(st.session_state.legend_page, total_pages - 1))
+    
+    # Pagination controls if more than 5 segments
+    if len(segments) > segments_per_page:
+        nav_col1, nav_col2, nav_col3, nav_col4, nav_col5 = st.columns([1, 1, 1, 1, 1])
+        
+        with nav_col1:
+            if st.button("◀ Previous", disabled=st.session_state.legend_page == 0, key="legend_prev"):
+                st.session_state.legend_page = max(0, st.session_state.legend_page - 1)
+        
+        with nav_col3:
+            # Use selectbox for page selection - no rerun needed
+            page_options = [f"Page {i+1}" for i in range(total_pages)]
+            selected_page_label = st.selectbox(
+                "Page", 
+                page_options, 
+                index=st.session_state.legend_page,
+                key="legend_page_select",
+                label_visibility="collapsed"
             )
-            mini_fig.update_layout(
-                height=50,
-                margin={'l': 0, 'r': 0, 't': 0, 'b': 0},
-                xaxis={'visible': False},
-                yaxis={'visible': False},
-                paper_bgcolor='rgba(0,0,0,0)',
-                plot_bgcolor='rgba(0,0,0,0)'
-            )
-            st.plotly_chart(mini_fig, use_container_width=True)
-            st.markdown(f"**{segment_name}**")
+            # Update session state based on selection
+            st.session_state.legend_page = page_options.index(selected_page_label)
+        
+        with nav_col5:
+            if st.button("Next ▶", disabled=st.session_state.legend_page >= total_pages - 1, key="legend_next"):
+                st.session_state.legend_page = min(total_pages - 1, st.session_state.legend_page + 1)
+    
+    # Calculate which segments to show on current page
+    start_idx = st.session_state.legend_page * segments_per_page
+    end_idx = min(start_idx + segments_per_page, len(segments))
+    current_page_segments = segments[start_idx:end_idx]
+    
+    # Create columns for current page segments
+    if current_page_segments:
+        legend_cols = st.columns(len(current_page_segments))
+        colors = ['blue', 'red', 'green', 'orange', 'purple', 'brown']
+        
+        # Create legend entry for each segment on current page
+        for i, segment in enumerate(current_page_segments):
+            # Use original index for color consistency across pages
+            original_idx = start_idx + i
+            color = colors[original_idx % len(colors)]
+            segment_name = f"Fork {segment['segment_id']}" if segment['is_fork'] else "Original"
             
-            # Display parameter changes for fork segments
-            if segment['is_fork']:
-                param_changes = get_parameter_changes(segment, original_params)
-                if param_changes:
-                    st.markdown("*Changed parameters:*")
-                    # Show first 3 parameter changes
-                    for change in param_changes[:3]:
-                        st.markdown(f"• {change}")
-                    # Indicate if more changes exist
-                    if len(param_changes) > 3:
-                        st.markdown(f"• +{len(param_changes)-3} more...")
+            with legend_cols[i]:
+                # Create visual line indicator for segment
+                mini_fig = go.Figure()
+                mini_fig.add_trace(
+                    go.Scatter(
+                        x=[0, 1],
+                        y=[0, 0],
+                        mode='lines',
+                        line={'color': color, 'dash': 'dash' if segment['is_fork'] else 'solid', 'width': 3},
+                        showlegend=False
+                    )
+                )
+                mini_fig.update_layout(
+                    height=50,
+                    margin={'l': 0, 'r': 0, 't': 0, 'b': 0},
+                    xaxis={'visible': False},
+                    yaxis={'visible': False},
+                    paper_bgcolor='rgba(0,0,0,0)',
+                    plot_bgcolor='rgba(0,0,0,0)'
+                )
+                st.plotly_chart(mini_fig, use_container_width=True, key=f"legend_chart_{segment['segment_id']}")
+                st.markdown(f"**{segment_name}**")
+                
+                # Display parameter changes for fork segments
+                if segment['is_fork']:
+                    param_changes = get_parameter_changes(segment, original_params)
+                    if param_changes:
+                        st.markdown("*Changed parameters:*")
+                        # Show first 3 parameter changes
+                        for change in param_changes[:3]:
+                            st.markdown(f"• {change}")
+                        # Indicate if more changes exist
+                        if len(param_changes) > 3:
+                            st.markdown(f"• +{len(param_changes)-3} more...")
+    
+    # Show total segments info if paginated
+    if len(segments) > segments_per_page:
+        st.markdown(f"<div style='text-align: center; font-size: 0.8em; color: gray; margin-top: 10px;'>Showing {len(current_page_segments)} of {len(segments)} total segments</div>", unsafe_allow_html=True)
 
 
 def render_help_section():

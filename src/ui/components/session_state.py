@@ -38,6 +38,19 @@ def initialize_session_state():
     # Simulation control state
     if 'is_running_simulation' not in st.session_state:
         st.session_state.is_running_simulation = False  # Flag to prevent concurrent simulations
+    
+    # DoE session state
+    if 'doe_design_matrix' not in st.session_state:
+        st.session_state.doe_design_matrix = None  # Generated DoE design matrix
+    
+    if 'doe_design_properties' not in st.session_state:
+        st.session_state.doe_design_properties = None  # DoE design properties and metadata
+    
+    if 'doe_batch_results' not in st.session_state:
+        st.session_state.doe_batch_results = None  # Batch simulation results from DoE experiments
+    
+    if 'doe_selected_params' not in st.session_state:
+        st.session_state.doe_selected_params = {}  # DoE parameter selections
 
 
 def reset_simulation_state():
@@ -52,6 +65,18 @@ def reset_simulation_state():
     st.session_state.parameters_at_timepoint = None
     st.session_state.base_parameters = None
     st.session_state.is_running_simulation = False
+    
+    # Reset legend pagination
+    if 'legend_page' in st.session_state:
+        st.session_state.legend_page = 0
+    if 'legend_prev_segment_count' in st.session_state:
+        st.session_state.legend_prev_segment_count = 0
+    
+    # Reset DoE state when simulations are reset
+    st.session_state.doe_design_matrix = None
+    st.session_state.doe_design_properties = None
+    st.session_state.doe_batch_results = None
+    st.session_state.doe_selected_params = {}
 
 
 def get_max_simulation_time():
@@ -88,3 +113,11 @@ def can_continue_simulation(base_parameters):
     """
     return (has_simulation_data() and 
             st.session_state.current_time_point < base_parameters.get('total_hours', 100))
+
+
+def clear_doe_state():
+    """Clear all DoE-related session state variables."""
+    st.session_state.doe_design_matrix = None
+    st.session_state.doe_design_properties = None
+    st.session_state.doe_batch_results = None
+    st.session_state.doe_selected_params = {}

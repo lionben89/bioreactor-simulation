@@ -39,7 +39,7 @@ def get_simulation_parameters():
             "description": "Glucose concentration in feed medium (g/L)",
             "category": "Feeding",
             "min_factor": 0.1,
-            "max_factor": 20.0,
+            "max_factor": 9.0,
             "units": "g/L"
         },
         "glutamine_feed_conc": {
@@ -47,7 +47,7 @@ def get_simulation_parameters():
             "description": "Glutamine concentration in feed medium (g/L)",
             "category": "Feeding",
             "min_factor": 0.1,
-            "max_factor": 20.0,
+            "max_factor": 9.0,
             "units": "g/L"
         },
         
@@ -88,6 +88,10 @@ def render_doe_parameter_selection() -> Dict[str, Any]:
     st.sidebar.markdown("### 📋 Parameter Selection")
     st.sidebar.markdown("Select parameters to vary in your DoE study:")
     
+    # Initialize DoE parameter selection in session state if not exists
+    if 'doe_selected_params' not in st.session_state:
+        st.session_state.doe_selected_params = {}
+    
     # Get all available parameters
     all_params = get_simulation_parameters()
     
@@ -108,9 +112,13 @@ def render_doe_parameter_selection() -> Dict[str, Any]:
             for param_name in param_names:
                 param_info = all_params[param_name]
                 
+                # Check if parameter was previously selected
+                previously_selected = param_name in st.session_state.doe_selected_params
+                
                 # Checkbox for parameter selection
                 is_selected = st.checkbox(
                     f"{param_name}",
+                    value=previously_selected,
                     key=f"doe_select_{param_name}",
                     help=f"{param_info['description']} (Default: {param_info['default']} {param_info['units']})"
                 )
@@ -121,13 +129,20 @@ def render_doe_parameter_selection() -> Dict[str, Any]:
                     default_min = default_val * param_info["min_factor"]
                     default_max = default_val * param_info["max_factor"]
                     
+                    # Get previous values if they exist
+                    prev_min = default_min
+                    prev_max = default_max
+                    if param_name in st.session_state.doe_selected_params:
+                        prev_min = st.session_state.doe_selected_params[param_name].get('min', default_min)
+                        prev_max = st.session_state.doe_selected_params[param_name].get('max', default_max)
+                    
                     # Create two columns for min/max inputs
                     col1, col2 = st.columns(2)
                     
                     with col1:
                         min_val = st.number_input(
                             "Min",
-                            value=default_min,
+                            value=prev_min,
                             key=f"doe_min_{param_name}",
                             format="%.6f",
                             help=f"Minimum value for {param_name}"
@@ -136,7 +151,7 @@ def render_doe_parameter_selection() -> Dict[str, Any]:
                     with col2:
                         max_val = st.number_input(
                             "Max",
-                            value=default_max,
+                            value=prev_max,
                             key=f"doe_max_{param_name}",
                             format="%.6f",
                             help=f"Maximum value for {param_name}"
@@ -146,8 +161,8 @@ def render_doe_parameter_selection() -> Dict[str, Any]:
                     if min_val >= max_val:
                         st.error(f"Min must be < Max for {param_name}")
                     else:
-                        # Store selected parameter
-                        selected_params[param_name] = {
+                        # Store selected parameter in both local dict and session state
+                        param_data = {
                             "min": min_val,
                             "max": max_val,
                             "default": default_val,
@@ -155,6 +170,15 @@ def render_doe_parameter_selection() -> Dict[str, Any]:
                             "units": param_info["units"],
                             "category": param_info["category"]
                         }
+                        selected_params[param_name] = param_data
+                        st.session_state.doe_selected_params[param_name] = param_data
+                else:
+                    # Remove from session state if deselected
+                    if param_name in st.session_state.doe_selected_params:
+                        del st.session_state.doe_selected_params[param_name]
+    
+    # Update session state with current selection
+    st.session_state.doe_selected_params = selected_params
     
     # Show selection summary
     if selected_params:

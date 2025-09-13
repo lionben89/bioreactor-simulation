@@ -12,11 +12,13 @@ from .visualization import render_visualization_layout
 from .parameter_tabs import render_parameter_tabs
 from .data_export import render_export_button
 from .doe_parameters import render_doe_parameter_selection, validate_parameter_selection
+from .doe_design import generate_doe_design, render_design_matrix, export_design_matrix, render_batch_controls
 
 __all__ = [
     'initialize_session_state', 'reset_simulation_state',
     'render_control_panel', 'execute_simulation', 
     'render_visualization_layout', 'render_parameter_tabs',
     'render_export_button', 'render_doe_parameter_selection',
-    'validate_parameter_selection'
+    'validate_parameter_selection', 'generate_doe_design',
+    'render_design_matrix', 'export_design_matrix', 'render_batch_controls'
 ]

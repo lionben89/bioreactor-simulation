@@ -29,7 +29,11 @@ from components import (
     render_visualization_layout,
     render_parameter_tabs,
     render_doe_parameter_selection,
-    validate_parameter_selection
+    validate_parameter_selection,
+    generate_doe_design,
+    render_design_matrix,
+    export_design_matrix,
+    render_batch_controls,
 )
 
 def main():
@@ -51,6 +55,10 @@ def main():
     # ==================== MAIN HEADER ====================
     st.title("🧬 CHO Cell Perfusion Bioreactor Simulation & DoE Platform")
     
+    # ==================== SESSION STATE INITIALIZATION ====================
+    # Initialize session state before any tab operations to ensure persistence
+    initialize_session_state()
+    
     # ==================== PRIMARY TABBED INTERFACE ====================
     # Use radio buttons to create tab-like behavior with conditional sidebar
     tab_selection = st.radio(
@@ -63,9 +71,6 @@ def main():
     # ==================== CONDITIONAL CONTENT BASED ON TAB SELECTION ====================
     if tab_selection == "🔬 Simulation":
         # ==================== SIMULATION TAB ====================
-        # SESSION STATE INITIALIZATION
-        initialize_session_state()
-
         # SIDEBAR: SIMULATION PARAMETERS
         with st.sidebar:
             st.title("⚙️ Simulation Parameters")
@@ -77,8 +82,8 @@ def main():
 
         # Execute simulation if requested
         if start_simulation or st.session_state.is_running_simulation:
-            success = execute_simulation(base_parameters)
-            if success:
+            simulation_results = execute_simulation(base_parameters)
+            if simulation_results:  # Check if we got results (non-empty list)
                 st.session_state.is_running_simulation = False
                 st.rerun()
 
@@ -163,51 +168,8 @@ def main():
             
             Choose which bioreactor parameters you want to investigate in your experimental design. 
             Consider starting with 2-4 key parameters that you suspect have the biggest impact on your process.
-            
-            ### 🎯 **Recommended Parameter Combinations:**
-            
-            **📊 Basic Cell Growth Study (3 factors)**
-            - `max_growth_rate` - How fast cells can grow
-            - `glucose_uptake_rate` - Substrate consumption rate  
-            - `culture_temp` (via environmental controls) - Temperature effects
-            
-            **🔬 Process Optimization Study (4-5 factors)**
-            - `max_growth_rate` - Cell growth capacity
-            - `glucose_uptake_rate` - Substrate kinetics
-            - `specific_productivity` - Product formation
-            - `perfusion_rate_base` - Feed strategy
-            - `glucose_threshold` - Control logic
-            
-            **🧬 Advanced Kinetics Study (6+ factors)**  
-            - Multiple Monod constants (`glucose_monod_const`, `glutamine_monod_const`)
-            - Inhibition coefficients (`lactate_inhibition_coeff`, `ammonia_inhibition_coeff`)
-            - Environmental sensitivities (`temp_heat_sensitivity`, `ph_alkaline_sensitivity`)
-            
-            ### 💡 **DoE Study Types Available:**
-            
-            | DoE Type | Best For | Factors | Runs |
-            |----------|----------|---------|------|
-            | **Full Factorial** | Complete factor exploration | 2-4 | 2^n to 5^n |
-            | **Central Composite** | Response surface modeling | 2-6 | 2^n + 2n + 1 |
-            | **Plackett-Burman** | Factor screening | 4-12 | n+1 to 4×ceil(n/4) |
-            | **Box-Behnken** | Efficient response surfaces | 3-6 | Fewer than CCD |
-            | **Latin Hypercube** | Space-filling sampling | Any | User defined |
-            
             """)
             
-            # Add example parameter selection
-            st.markdown("### 📝 **Quick Start Example**")
-            st.info("""
-            **Try this**: In the sidebar, expand "🧬 Cell Growth" and select:
-            - ✅ `max_growth_rate` (set range: 0.02 - 0.08)
-            - ✅ `death_rate` (set range: 0.001 - 0.01)
-            
-            Then expand "🔬 Substrate Kinetics" and select:
-            - ✅ `glucose_uptake_rate` (set range: 0.01 - 0.05)
-            
-            This gives you a 3-factor study perfect for learning DoE basics!
-            """)
-        
         else:
             # Show parameter validation and study preview
             is_valid, errors = validate_parameter_selection(selected_params)
@@ -252,19 +214,82 @@ def main():
                         if 'lhs_samples' in st.session_state:
                             st.write(f"**Samples:** {st.session_state.lhs_samples}")
                 
-                # Show next steps
-                st.markdown("### 🚀 Next Steps")
-                st.info("""
-                **Phase 2 Coming Soon**: DoE Design Generation
-                - Generate experimental design matrix using DoEgen
-                - Preview all experimental runs
-                - Export design for external tools
-                - Execute batch simulations automatically
-                """)
+                # Show next steps and design generation
+                st.markdown("### 🚀 Generate DoE Design")
+                
+                # Get current DoE configuration
+                doe_type = st.session_state.get('doe_type_selection', 'Full Factorial')
+                levels = st.session_state.get('doe_levels', 2)
+                lhs_samples = st.session_state.get('lhs_samples', 50)
+                
+                # Prepare kwargs for design generation
+                design_kwargs = {}
+                if "Factorial" in doe_type:
+                    design_kwargs['levels'] = levels
+                elif doe_type == "Latin Hypercube Sampling":
+                    design_kwargs['n_samples'] = lhs_samples
+                
+
+                if st.button("🔬 Generate Design", type="primary"):
+                    # Generate the DoE design
+                    with st.spinner("Generating DoE design..."):
+                        design_matrix, properties = generate_doe_design(
+                            selected_params, 
+                            doe_type, 
+                            **design_kwargs
+                        )
+                    
+                    if not design_matrix.empty:
+                        # Store in session state
+                        st.session_state['doe_design_matrix'] = design_matrix
+                        st.session_state['doe_design_properties'] = properties
+                        st.success("✅ DoE design generated successfully!")
+                        st.rerun()
+                
+                # Display generated design if it exists
+                if ('doe_design_matrix' in st.session_state and 
+                    st.session_state['doe_design_matrix'] is not None and 
+                    not st.session_state['doe_design_matrix'].empty):
+                    st.markdown("---")
+                    
+                    # Add clear DoE button
+                    col1, col2 = st.columns([4, 1])
+                    with col1:
+                        st.markdown("## 📊 Generated DoE Design")
+                    with col2:
+                        if st.button("🗑️ Clear DoE", help="Clear current DoE design and results"):
+                            # Clear DoE state
+                            st.session_state.doe_design_matrix = None
+                            st.session_state.doe_design_properties = None
+                            st.session_state.doe_batch_results = None
+                            st.session_state.doe_selected_params = {}
+                            st.rerun()
+                    
+                    # Render the design matrix
+                    render_design_matrix(
+                        st.session_state['doe_design_matrix'],
+                        st.session_state['doe_design_properties']
+                    )
+                    
+                    # Export options
+                    export_design_matrix(
+                        st.session_state['doe_design_matrix'],
+                        st.session_state['doe_design_properties']
+                    )
+                    
+                    # Batch simulation controls
+                    st.markdown("---")
+                    render_batch_controls(
+                        st.session_state['doe_design_matrix'],
+                        st.session_state['doe_design_properties']
+                    )
+                
+                else:
+                    st.info("Click 'Generate Design' above to create your experimental matrix!")
                 
                 # Placeholder for future DoE generation button
-                if st.button("🔄 Generate DoE Design (Coming Soon)", disabled=True):
-                    st.warning("DoE design generation will be implemented in Phase 2!")
+                # if st.button("🔄 Generate DoE Design (Coming Soon)", disabled=True):
+                #     st.warning("DoE design generation will be implemented in Phase 2!")
         
         # Show DoE methodology information
         with st.expander("DoE Methodology Guide", expanded=False):
