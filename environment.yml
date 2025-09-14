@@ -6,6 +6,6 @@ dependencies:
 - pandas
 - streamlit
 - plotly
-- doegen
+- pydoe3
 - scikit-learn
 - scipy
